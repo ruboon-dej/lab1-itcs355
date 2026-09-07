@@ -115,6 +115,9 @@ answer, and we compare answers in Session 2. An answer that refuses to choose sc
 
 requirements.txt was regenerated with pip-compile --generate-hashes; one transitive dependency (greenlet) required an explicit entry in requirements.in since --require-hashes rejects
 unpinned transitive packages.
+**DVC remote access:** Raw data is versioned in a private Azure Blob Storage container (`itcs355` on account `itcs3556688022`) and requires Azure credentials with
+`Storage Blob Data Reader` access to pull via `dvc pull`. This is **not required to reproduce the graded metric** — `make reproduce` regenerates the raw dataset deterministically
+from the fixed seedvia `scripts/make_dataset.py`, with no dependency on DVC or cloud access.
 
 ---
 
