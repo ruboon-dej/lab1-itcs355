@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -20,7 +21,13 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 from src import config, data, seeds
+from src.costs import hourly_rate
+import time
+start_time = time.time()
 
+os.environ.pop("MLFLOW_RUN_ID", None)
+os.environ["MLFLOW_ALLOW_FILE_STORE"] = "true"
+mlflow.set_tracking_uri("file:./mlruns")
 
 def git_commit() -> str:
     try:
@@ -55,10 +62,11 @@ def main() -> None:
     fingerprint = data.data_fingerprint(cfg.raw_path)
     train_df, val_df, test_df = data.split(df, seed=seed)
 
-    mlflow.set_tracking_uri(cfg.mlflow_tracking_uri)
-    mlflow.set_experiment(args.experiment)
+    if not os.environ.get("MLFLOW_RUN_ID"):
+        mlflow.set_experiment(args.experiment)
 
-    with mlflow.start_run(run_name=args.run_name):
+    with mlflow.start_run(run_name=args.run_name) as run:
+        print(f"MLFLOW_RUN_ID={run.info.run_id}")
         mlflow.log_params({
             "n_estimators": args.n_estimators,
             "max_depth": args.max_depth,
@@ -85,6 +93,13 @@ def main() -> None:
         )
         model.fit(train_df[data.FEATURES], train_df[data.TARGET])
 
+        elapsed_hours = (time.time() - start_time) / 3600.0
+        cost_thb = hourly_rate("azure", "Standard_DS3_v2") * elapsed_hours
+        mlflow.set_tags({
+            "instance_type": "Standard_DS3_v2",
+            "estimated_cost_thb": round(cost_thb, 4),
+        })
+
         metrics: dict[str, float] = {}
         for name, part in (("val", val_df), ("test", test_df)):
             proba = model.predict_proba(part[data.FEATURES])[:, 1]
@@ -92,12 +107,23 @@ def main() -> None:
             metrics[f"{name}_pr_auc"] = float(average_precision_score(part[data.TARGET], proba))
         mlflow.log_metrics(metrics)
         mlflow.sklearn.log_model(model, name="model")
-
-        print(json.dumps({"seed": seed, "data_fingerprint": fingerprint, **metrics}, indent=2))
+        import joblib
         if args.metrics_out:
             args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
-            args.metrics_out.write_text(json.dumps(
-                {"seed": seed, "data_fingerprint": fingerprint, **metrics}, indent=2))
+            joblib.dump(model, args.metrics_out.parent / "model.joblib")
+
+        run_id = run.info.run_id
+        output = {
+            "seed": seed,
+            "data_fingerprint": fingerprint,
+            "mlflow_run_id": run_id,
+            **metrics,
+        }
+
+        print(json.dumps(output, indent=2))
+
+        if args.metrics_out:
+            args.metrics_out.write_text(json.dumps(output, indent=2))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,9 @@
+{
+  "seed": 20260102,
+  "data_fingerprint": "3ae9705eb3f197a3",
+  "mlflow_run_id": "a81deea37f9b4659addf64908d518e7b",
+  "val_roc_auc": 0.873298156471891,
+  "val_pr_auc": 0.47184432690186034,
+  "test_roc_auc": 0.8463274932614555,
+  "test_pr_auc": 0.47579767620205243
+}

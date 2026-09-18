@@ -135,3 +135,82 @@ from the fixed seedvia `scripts/make_dataset.py`, with no dependency on DVC or c
 
 That last check is not optional. A credential in Git history is an automatic deduction in this
 course, and rotating it is your responsibility, not the grader's.
+
+---
+
+## Lab 2 — Cloud Training, Model Selection, Registry, and Reproducible Deployment
+
+### Cloud training
+Training ran on Azure ML managed compute (Standard_DS3_v2, dedicated tier — the
+workspace had no low-priority/spot quota available). Compute scales to 0 when idle.
+
+### Trials
+12 real Azure ML trials varied three hyperparameters with intent:
+`n_estimators`, `max_depth`, and `min_samples_leaf`. Total cost was ~2.91 THB,
+well under the 150 THB budget.
+
+### Selection
+Selected config: `n_estimators=100, max_depth=4, min_samples_leaf=5`. It was
+re-run across 3 seeds to check stability:
+
+| Seed | Val ROC-AUC | Val PR-AUC | Test ROC-AUC |
+|---|---|---|---|
+| 20260101 | 0.8426 | 0.3932 | 0.8533 |
+| 20260102 | **0.8733** | **0.4718** | 0.8463 |
+| 20260103 | 0.8430 | 0.3909 | 0.8318 |
+
+Seed 20260102 was selected because validation performance is used for selection;
+the test set remains held out. Seed 20260101 scored slightly higher on test, but
+using that result to select the model would leak information from the held-out
+set. Val ROC-AUC SD across seeds ≈ 0.018, showing meaningful seed-to-seed
+variation.
+
+Training cost was ~0.19 THB/trial and total study cost was ~2.91 THB, well
+within the 150 THB budget. At the observed per-trial cost, a single retraining
+run on this configuration would cost about 0.19 THB.
+
+One way this choice could be wrong is that the seed also reseeds
+`make_dataset.py`, so the three runs vary both model randomness and the
+underlying data — the observed variance does not isolate model-seed variance
+alone. This same configuration scored 0.8426 in the original 12-trial sweep
+(default seed), versus 0.8733 with seed 20260102 and 0.8430 with seed 20260103.
+Seed-driven variation is therefore large relative to the differences observed
+across the original sweep, so the sweep alone does not establish a reliably
+superior configuration.
+
+### Lineage
+| Item | Value |
+|---|---|
+| Git commit | `6ccc5ee0e89d624811802e869f5e4099d1707776` |
+| DVC data version | `1c886b512c8a5c9bf723da1cd119fc80.dir` |
+| MLflow run ID | `a81deea37f9b4659addf64908d518e7b` |
+| Training job | `mango_boot_pbpr17lrhb` |
+| Image digest | `sha256:585f50972aa5afd104c6b337fd23716a82276cb9b6a5401d7f8a0dbaf64a0d7a` |
+| Seed | `20260102` |
+| Val / Test ROC-AUC | `0.8733` / `0.8463` |
+
+### Registry
+Registered as `itcs355-6688022:1` with the lineage above as tags, plus
+`stage=staging`. The installed Azure ML SDK (`azure-ai-ml 1.35.0`) had no
+public native stage-promotion API, so staging is represented with a `stage` tag.
+
+### Promotion policy
+Promotion should be owned by a designated ML engineer/release owner, not the
+trainer. Required evidence: git commit, data version, MLflow run ID, training
+job ID, image digest, seed, validation/test metrics, baseline comparison,
+successful registry reload, and approved cost profile.
+
+### Reload check
+`reload_check.py` downloaded `itcs355-6688022:1` directly from the registry,
+deserialized it, and scored 5 held-out rows — **PASS**.
+
+**Known limitation:** `reload_check.py` splits the data with `seed=20260101`,
+while the registered model was trained using data generated with
+`seed=20260102`. This proves the registry-to-inference path works but is not an
+exact reproduction of the original evaluation split.
+
+### Known limitations
+- The local MLflow file store did not persist beyond each ephemeral container;
+  Azure job logs/artifacts were used to recover completed-run metrics.
+- The reload-check data split seed does not match the registered model's
+  training-data seed.

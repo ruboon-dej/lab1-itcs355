@@ -35,7 +35,7 @@ COPY --chown=runner:runner src/ ./src/
 COPY --chown=runner:runner cloudlayer/ ./cloudlayer/
 COPY --chown=runner:runner scripts/ ./scripts/
 
-RUN mkdir -p /app/mlruns /app/reports && chown -R runner:runner /app/mlruns /app/reports
+RUN mkdir -p /app/mlruns /app/reports /app/data /app/outputs && chown -R runner:runner /app/mlruns /app/reports /app/data /app/outputs
 
 USER runner
 

@@ -37,8 +37,10 @@ image: ## Build the training image for linux/amd64
 	docker buildx build --platform $(PLATFORM) -t $(IMAGE):$(TAG) --load .
 
 image-push: image ## Push to CONTAINER_REGISTRY via your adapter
-	python -c "from src import config; from cloudlayer.factory import get_adapter; \
-	print(get_adapter(config.load()).push_image(\"$(IMAGE):$(TAG)\"))"
+	@python -c "from cloudlayer.factory import get_adapter; from src import config; \
+	uri = get_adapter(config.load()).push_image(\"$(IMAGE):$(TAG)\"); \
+	open('.image_uri', 'w').write(uri); \
+	print(uri)"
 
 reproduce: data image ## THE ONE COMMAND. Grader runs this.
 	docker run --rm \
@@ -60,6 +62,9 @@ clean: ## Remove local artifacts
 # --- Lab 2 -------------------------------------------------------------------
 tune: ## Budgeted hyperparameter study (>=12 trials)
 	python -m src.tune --trials 12 --budget-thb 150
+
+train-remote: ## Submit one trial as a managed Azure ML job
+	python scripts/train_remote.py --n-estimators 200 --max-depth 8 --seed $(SEED)
 
 compare: ## Rank runs by metric and by cost per point
 	python scripts/compare_runs.py --experiment itcs355-lab2
