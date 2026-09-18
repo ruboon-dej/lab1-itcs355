@@ -145,9 +145,8 @@ Training ran on Azure ML managed compute (Standard_DS3_v2, dedicated tier — th
 workspace had no low-priority/spot quota available). Compute scales to 0 when idle.
 
 ### Trials
-12 real Azure ML trials varied three hyperparameters with intent:
-`n_estimators`, `max_depth`, and `min_samples_leaf`. Total cost was ~2.91 THB,
-well under the 150 THB budget.
+The 12 actual Azure ML experiments were done on 3 hyperparameters to achieve:
+`n_estimators`, `max_depth`, and `min_samples_leaf`. The total cost was roughly 2.91 THB, well within the budget of 150 THB.
 
 ### Selection
 Selected config: `n_estimators=100, max_depth=4, min_samples_leaf=5`. It was
@@ -159,15 +158,9 @@ re-run across 3 seeds to check stability:
 | 20260102 | **0.8733** | **0.4718** | 0.8463 |
 | 20260103 | 0.8430 | 0.3909 | 0.8318 |
 
-Seed 20260102 was selected because validation performance is used for selection;
-the test set remains held out. Seed 20260101 scored slightly higher on test, but
-using that result to select the model would leak information from the held-out
-set. Val ROC-AUC SD across seeds ≈ 0.018, showing meaningful seed-to-seed
-variation.
+Seed 20260102 was chosen since validation performance is used for choosing the model; the test set is kept held-out. Even though seed 20260101 had a slightly better score on the test set, using the performance on the test set for choosing the model leaks information about the held-out data.
 
-Training cost was ~0.19 THB/trial and total study cost was ~2.91 THB, well
-within the 150 THB budget. At the observed per-trial cost, a single retraining
-run on this configuration would cost about 0.19 THB.
+The cost for training was 0.19 THB/trial and total cost for the study was 2.91 THB, clearly below the budget of 150 THB. Given the cost per trial, the retraining on one configuration alone would cost 0.19 THB.
 
 One way this choice could be wrong is that the seed also reseeds
 `make_dataset.py`, so the three runs vary both model randomness and the
@@ -195,10 +188,7 @@ Registered as `itcs355-6688022:1` with the lineage above as tags, plus
 public native stage-promotion API, so staging is represented with a `stage` tag.
 
 ### Promotion policy
-Promotion should be owned by a designated ML engineer/release owner, not the
-trainer. Required evidence: git commit, data version, MLflow run ID, training
-job ID, image digest, seed, validation/test metrics, baseline comparison,
-successful registry reload, and approved cost profile.
+Promotion should be managed by an appointed ML Engineer/Release Owner, and not the trainer. Evidence required: Git Commit, Data Version, MLflow Run ID, Training Job ID, Image Digest, Seed, Validation/Test Metrics, Baseline Comparison, Registry Reload Success, and Cost Profile Approval.
 
 ### Reload check
 `reload_check.py` downloaded `itcs355-6688022:1` directly from the registry,
