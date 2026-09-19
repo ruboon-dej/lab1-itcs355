@@ -26,6 +26,7 @@ from azure.ai.ml import Input, MLClient, Output, command
 from azure.ai.ml.entities import Environment, Model
 from azure.ai.ml.constants import AssetTypes
 from azure.identity import DefaultAzureCredential
+from azure.core.exceptions import HttpResponseError
 
 from cloudlayer.base import CloudAdapter
 import os
@@ -360,8 +361,33 @@ class AzureAdapter(CloudAdapter):
             "metrics": metrics,
         }
     
+    def teardown(self, tags: dict[str, str]) -> list[str]:
+        """Delete Azure ML jobs and compute resources carrying the given tags."""
+        ml_client = self._ml_client()
+        deleted: list[str] = []
+
+        for job in ml_client.jobs.list():
+            job_tags = getattr(job, "tags", {}) or {}
+            if all(job_tags.get(key) == value for key, value in tags.items()):
+                try:
+                    ml_client.jobs.begin_delete(job.name)
+                    deleted.append(f"job:{job.name}")
+                except HttpResponseError as exc:
+                    if exc.status_code != 404:
+                        raise
+
+        for compute in ml_client.compute.list():
+            compute_tags = getattr(compute, "tags", {}) or {}
+            if all(
+                compute_tags.get(key) == value
+                for key, value in tags.items()
+            ):
+                ml_client.compute.begin_delete(compute.name)
+                deleted.append(f"compute:{compute.name}")
+
+        return deleted
     # submit_training / register_model  -> Lab 2 (Azure ML command job + model registry)
     # deploy / invoke                   -> Lab 3 (managed online endpoint + deployment)
     # emit_metric                       -> Lab 4 (Azure Monitor custom metric)
     # generate                          -> Lab 5 (managed LLM endpoint; read the usage block for tokens)
-    # teardown                          -> Lab 5 (resource graph query by tag)
+    # teardown                          -> Lab 2 (delete Azure ML jobs + compute by tag)
