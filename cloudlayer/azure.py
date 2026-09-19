@@ -244,7 +244,7 @@ class AzureAdapter(CloudAdapter):
                 f"--data-path ${{{{inputs.training_data}}}} "
                 f"{cli_args} "
                 "--experiment itcs355-lab2 "
-                "--metrics-out ${{{{outputs.model_output}}}}"
+                f"--metrics-out ${{{{outputs.model_output}}}}/metrics.json"
             ),
 
             outputs={
