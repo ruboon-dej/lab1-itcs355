@@ -22,13 +22,18 @@ import time
 from typing import Any
 from urllib.parse import urlparse
 
-from azure.ai.ml import MLClient, command, Output
-from azure.ai.ml.entities import Environment, Model, JobResourceConfiguration
+from azure.ai.ml import Input, MLClient, Output, command
+from azure.ai.ml.entities import Environment, Model
 from azure.ai.ml.constants import AssetTypes
 from azure.identity import DefaultAzureCredential
+from azure.core.exceptions import HttpResponseError
 
 from cloudlayer.base import CloudAdapter
 import os
+import json
+import re
+import tempfile
+import uuid
 
 
 def _parse_blob_uri(blob_uri: str) -> tuple[str, str, str]:
@@ -43,29 +48,31 @@ def _parse_blob_uri(blob_uri: str) -> tuple[str, str, str]:
 
 
 class AzureAdapter(CloudAdapter):
-    def register_model(self, model_uri: str, name: str) -> str:
-        """Register the selected model in Azure ML with full lineage."""
+    def register_model(
+        self,
+        model_uri: str,
+        name: str,
+        tags: dict[str, str] | None = None,
+    ) -> str:
+        """Register an MLflow model while preserving run/job lineage."""
         ml_client = self._ml_client()
 
-        model_path = Path(model_uri)
-        if not model_path.exists():
-            raise FileNotFoundError(f"Model artifact not found: {model_path}")
+        if model_uri.startswith("runs:/"):
+            model_type = AssetTypes.MLFLOW_MODEL
+        else:
+            model_path = Path(model_uri)
+            if not model_path.exists():
+                raise FileNotFoundError(
+                    f"Model artifact not found: {model_path}"
+                )
+            model_type = AssetTypes.CUSTOM_MODEL
 
         model = Model(
-            path=str(model_path),
+            path=model_uri,
             name=name,
-            type=AssetTypes.CUSTOM_MODEL,
+            type=model_type,
             description="ITCS355 Lab 2 selected RandomForest model",
-            tags={
-                "git_commit": "6ccc5ee0e89d624811802e869f5e4099d1707776",
-                "data_version": "1c886b512c8a5c9bf723da1cd119fc80.dir",
-                "mlflow_run_id": "a81deea37f9b4659addf64908d518e7b",
-                "training_job_id": "mango_boot_pbpr17lrhb",
-                "image_digest": "sha256:585f50972aa5afd104c6b337fd23716a82276cb9b6a5401d7f8a0dbaf64a0d7a",
-                "seed": "20260102",
-                "metric_val": "0.873298156471891",
-                "metric_test": "0.8463274932614555",
-            },
+            tags=tags or {},
         )
 
         registered = ml_client.models.create_or_update(model)
@@ -137,83 +144,250 @@ class AzureAdapter(CloudAdapter):
     def _mlflow_tracking_uri(self) -> str:
         return self._ml_client().workspaces.get(os.environ["AZURE_ML_WORKSPACE"]).mlflow_tracking_uri
 
-    def submit_training(self, image_uri: str, args: dict[str, Any]) -> str:
-        """Run the Lab 1 container as an Azure ML command job.
- 
-        `args` is whatever CLI flags your training entrypoint takes, e.g.
-        {"n-estimators": 200, "max-depth": 8, "seed": 20260101}. This function only
-        translates them into a command line; it does not interpret them.
-        """
+    def submit_training(
+        self,
+        image_uri: str,
+        args: dict[str, Any],
+    ) -> str:
+        """Submit one Lab 2 training trial to Azure ML."""
+
         ml_client = self._ml_client()
- 
-        cli_args = " ".join(f"--{k} {v}" for k, v in args.items())
- 
-        # Environment must be an actual Environment object wrapping your image — there is
-        # no "docker:<uri>" shorthand. Azure ML will register a new environment version
-        # the first time it sees this image; subsequent submissions reuse it.
+
+        compute_name = os.environ.get(
+            "AZURE_ML_COMPUTE",
+            "lab2-lowpri",
+        )
+
+        compute = ml_client.compute.get(compute_name)
+
+        tier = str(
+            getattr(
+                compute,
+                "tier",
+                getattr(
+                    getattr(compute, "properties", None),
+                    "vm_priority",
+                    "",
+                ),
+            )
+        ).lower().replace("-", "_")
+
+        if tier not in {"low_priority", "lowpriority"}:
+            raise RuntimeError(
+                f"Lab 2 requires discounted compute, but compute "
+                f"{compute_name!r} reports tier={tier!r}. "
+                "Do not submit the study on Dedicated compute."
+            )
+
+        cli_args = " ".join(
+            f"--{key} {value}"
+            for key, value in args.items()
+        )
+
         env = Environment(image=image_uri)
- 
+
+        data_uri = (
+            f"{self.cfg.blob_uri.rstrip('/')}"
+            "/training-data/sensors.csv"
+        )
+
+        output_uri = (
+            f"{self.cfg.blob_uri.rstrip('/')}"
+            f"/lab2-outputs/{uuid.uuid4().hex}"
+        )
+
+        git_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=self.cfg.data_dir.parent,
+        ).stdout.strip()
+
+        dvc_text = (
+            self.cfg.data_dir.parent / "data" / "raw.dvc"
+        ).read_text()
+
+        match = re.search(
+            r"md5:\s*([0-9a-f]+(?:\.dir)?)",
+            dvc_text,
+        )
+
+        if not match:
+            raise RuntimeError(
+                "Could not read the DVC data hash from data/raw.dvc"
+            )
+
+        dvc_version = match.group(1)
+
+        image_digest = (
+            image_uri.split("@", 1)[1]
+            if "@" in image_uri
+            else "unknown"
+        )
+
+        tracking_uri = self._mlflow_tracking_uri()
+
         job = command(
-        environment=env,
-        command=f"cd /app && python scripts/make_dataset.py --seed {args.get('seed', 20260101)} && "
-        f"python -m src.train {cli_args} "
-        f"--metrics-out ${{{{outputs.model_output}}}}/metrics.json",
-        outputs={
-            "model_output": Output(
-                type="uri_folder",
-                mode="rw_mount",
+            environment=env,
+
+            inputs={
+                "training_data": Input(
+                    type=AssetTypes.URI_FILE,
+                    path=data_uri,
+                    mode="ro_mount",
+                ),
+            },
+
+            command=(
+                "cd /app && "
+                "python -m src.train "
+                f"--data-path ${{{{inputs.training_data}}}} "
+                f"{cli_args} "
+                "--experiment itcs355-lab2 "
+                f"--metrics-out ${{{{outputs.model_output}}}}/metrics.json"
             ),
-        },
-            # TODO(Lab 2): the name of an AmlCompute cluster you created ahead of time,
-            # e.g. via `az ml compute create --name lab2-cluster --type AmlCompute
-            # --tier LowPriority --size Standard_DS3_v2 --min-instances 0 --max-instances 4`.
-            # Low-priority is a property of the CLUSTER, not the job — you cannot flip a
-            # job onto discounted compute without a cluster already provisioned that way.
-            compute="lab2-cluster",
-            resources=JobResourceConfiguration(instance_count=1),
+
+            outputs={
+                "model_output": Output(
+                    type=AssetTypes.URI_FOLDER,
+                    path=output_uri,
+                    mode="rw_mount",
+                ),
+            },
+
+            compute=compute_name,
+
             environment_variables={
                 "BLOB_URI": self.cfg.blob_uri,
-                "MLFLOW_TRACKING_URI": "file:./mlruns",
+                "CLOUD_PROVIDER": "azure",
+                "MLFLOW_TRACKING_URI": tracking_uri,
+                "GIT_COMMIT": git_sha,
+                "DVC_DATA_VERSION": dvc_version,
+                "IMAGE_DIGEST": image_digest,
+                "INSTANCE_TYPE": "Standard_DS3_v2",
+                "COMPUTE_TIER": "low_priority",
             },
+
             display_name="itcs355-lab2-trial",
             experiment_name="itcs355-lab2",
-            tags=self.cfg.tags(2),
+
+            tags={
+                **self.cfg.tags(2),
+                "compute": compute_name,
+                "compute_tier": "low_priority",
+            },
         )
- 
+
         submitted = ml_client.jobs.create_or_update(job)
+
         return submitted.name
  
     def wait_training(self, job_id: str) -> dict[str, Any]:
-        """Poll until the job reaches a terminal state, then return what mattered.
- 
-        The handout warns you will hit a permissions error on your FIRST submission,
-        and that it is normal. That error surfaces here, on the first `jobs.get` or
-        `jobs.stream` call — read it, fix the one missing role, and write down which
-        role it was. Drill 2 asks.
-        """
+        """Wait for a training job and recover its recorded metrics."""
+
         ml_client = self._ml_client()
-        terminal = {"Completed", "Failed", "Canceled"}
- 
+
+        terminal = {
+            "Completed",
+            "Failed",
+            "Canceled",
+        }
+
         status = None
+
         while status not in terminal:
             job = ml_client.jobs.get(job_id)
             status = job.status
-            time.sleep(15)
- 
+
+            if status not in terminal:
+                time.sleep(15)
+
         if status != "Completed":
-            raise RuntimeError(f"training job {job_id} ended with status={status}")
- 
+            raise RuntimeError(
+                f"training job {job_id} ended with status={status}"
+            )
+
+        with tempfile.TemporaryDirectory(
+            prefix="lab2_job_"
+        ) as tmp:
+
+            ml_client.jobs.download(
+                name=job_id,
+                output_name="model_output",
+                download_path=tmp,
+            )
+
+            metrics_files = list(
+                Path(tmp).rglob("metrics.json")
+            )
+
+            if not metrics_files:
+                raise FileNotFoundError(
+                    f"Job {job_id} completed but no metrics.json "
+                    "was found in model_output."
+                )
+
+            metrics = json.loads(
+                metrics_files[0].read_text()
+            )
+
         return {
             "job_id": job_id,
             "status": status,
             "studio_url": job.studio_url,
-            # Azure ML jobs write outputs under azureml://.../outputs/ by convention;
-            # your train.py wrote metrics.json there via --metrics-out.
-            "output_uri": f"azureml://jobs/{job_id}/outputs/artifacts/paths/outputs/",
+            "mlflow_run_id": metrics["mlflow_run_id"],
+            "data_fingerprint": metrics["data_fingerprint"],
+            "data_version": metrics.get(
+                "data_version",
+                "unknown",
+            ),
+            "git_commit": metrics.get(
+                "git_commit",
+                "unknown",
+            ),
+            "image_digest": metrics.get(
+                "image_digest",
+                "unknown",
+            ),
+            "seed": metrics["seed"],
+            "val_roc_auc": metrics["val_roc_auc"],
+            "val_pr_auc": metrics["val_pr_auc"],
+            "test_roc_auc": metrics["test_roc_auc"],
+            "test_pr_auc": metrics["test_pr_auc"],
+            "training_duration_s": metrics.get(
+                "training_duration_s"
+            ),
+            "metrics": metrics,
         }
     
+    def teardown(self, tags: dict[str, str]) -> list[str]:
+        """Delete Azure ML jobs and compute resources carrying the given tags."""
+        ml_client = self._ml_client()
+        deleted: list[str] = []
+
+        for job in ml_client.jobs.list():
+            job_tags = getattr(job, "tags", {}) or {}
+            if all(job_tags.get(key) == value for key, value in tags.items()):
+                try:
+                    ml_client.jobs.begin_delete(job.name)
+                    deleted.append(f"job:{job.name}")
+                except HttpResponseError as exc:
+                    if exc.status_code != 404:
+                        raise
+
+        for compute in ml_client.compute.list():
+            compute_tags = getattr(compute, "tags", {}) or {}
+            if all(
+                compute_tags.get(key) == value
+                for key, value in tags.items()
+            ):
+                ml_client.compute.begin_delete(compute.name)
+                deleted.append(f"compute:{compute.name}")
+
+        return deleted
     # submit_training / register_model  -> Lab 2 (Azure ML command job + model registry)
     # deploy / invoke                   -> Lab 3 (managed online endpoint + deployment)
     # emit_metric                       -> Lab 4 (Azure Monitor custom metric)
     # generate                          -> Lab 5 (managed LLM endpoint; read the usage block for tokens)
-    # teardown                          -> Lab 5 (resource graph query by tag)
+    # teardown                          -> Lab 2 (delete Azure ML jobs + compute by tag)

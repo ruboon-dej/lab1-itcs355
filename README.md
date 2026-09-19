@@ -117,7 +117,7 @@ requirements.txt was regenerated with pip-compile --generate-hashes; one transit
 unpinned transitive packages.
 **DVC remote access:** Raw data is versioned in a private Azure Blob Storage container (`itcs355` on account `itcs3556688022`) and requires Azure credentials with
 `Storage Blob Data Reader` access to pull via `dvc pull`. This is **not required to reproduce the graded metric** — `make reproduce` regenerates the raw dataset deterministically
-from the fixed seedvia `scripts/make_dataset.py`, with no dependency on DVC or cloud access.
+from the fixed seed via `scripts/make_dataset.py`, with no dependency on DVC or cloud access.
 
 ---
 
@@ -141,8 +141,53 @@ course, and rotating it is your responsibility, not the grader's.
 ## Lab 2 — Cloud Training, Model Selection, Registry, and Reproducible Deployment
 
 ### Cloud training
-Training ran on Azure ML managed compute (Standard_DS3_v2, dedicated tier — the
-workspace had no low-priority/spot quota available). Compute scales to 0 when idle.
+
+The Lab 2 implementation was prepared for Azure ML managed compute using
+discounted LowPriority compute. The intended compute was `Standard_DS3_v2`
+with `low_priority` tier.
+
+The workspace could not provision the required compute under the available
+Azure for Students subscription. The `lab2-lowpri` compute failed with
+`ClusterMinNodesExceedCoreQuota`. Azure reported that the subscription had
+0 vCPUs available to Azure ML managed compute.
+
+To verify that the failure was not specific to the DS3_v2 instance size, a
+second LowPriority compute using `Standard_D2s_v3` (2 vCPUs) was also created.
+It failed with the same `ClusterMinNodesExceedCoreQuota` error, reporting that
+the subscription's total vCPU quota was 0.
+
+The Azure Portal also rejected a quota-increase request because the current
+subscription is not eligible for a quota increase without upgrading to
+Pay-As-You-Go. I did not upgrade the subscription because this would introduce
+a billing requirement unrelated to the lab.
+
+Therefore, the remaining cloud-training work is blocked by the subscription's
+Azure ML compute quota rather than by the training implementation.
+
+Evidence:
+
+- `lab2-lowpri` — `Standard_DS3_v2`, LowPriority — provisioning failed with
+  `ClusterMinNodesExceedCoreQuota`.
+- `lab2-lowpri-d2` — `Standard_D2s_v3`, LowPriority — provisioning failed with
+  `ClusterMinNodesExceedCoreQuota`.
+- Azure CLI reported `lowPriorityCores` quota of 3 for the region, but Azure ML
+  managed compute reported a total vCPU quota of 0.
+- Azure Portal quota request was rejected because the Azure for Students
+  subscription is not eligible for a quota increase.
+- Quota-request trace ID:
+  `048fc0e0-68d6-433e-a432-42db5e788a8e`
+
+The required discounted-compute rerun should therefore be performed in a
+course-provided Azure subscription/workspace with sufficient Azure ML compute
+quota if one is made available.
+
+The 12-trial sweep and seed reruns were run on Dedicated Standard_DS3_v2 compute; the corresponding execution evidence is preserved under azure_trial_metrics/.
+
+The current training adapter enforces LowPriority compute for new Lab 2 submissions; the historical Dedicated runs above were completed before this guard was added and are retained as experimental evidence because the required LowPriority compute could not be provisioned.
+
+### Initial permission failure
+
+The first remote training submission used the compute managed identity `9144aef5-...`. It already had `Storage Blob Data Contributor` on the storage account, but was missing `AcrPull` on the `itcs3556688022` container registry. The job therefore could not pull the training image. Adding `AcrPull` to the compute identity resolved this permission failure.
 
 ### Trials
 The 12 actual Azure ML experiments were done on 3 hyperparameters to achieve:
@@ -158,9 +203,9 @@ re-run across 3 seeds to check stability:
 | 20260102 | **0.8733** | **0.4718** | 0.8463 |
 | 20260103 | 0.8430 | 0.3909 | 0.8318 |
 
-Seed 20260102 was chosen since validation performance is used for choosing the model; the test set is kept held-out. Even though seed 20260101 had a slightly better score on the test set, using the performance on the test set for choosing the model leaks information about the held-out data.
+Seed 20260102 was chosen because it had the highest validation ROC-AUC of the three seed reruns, and validation performance is used for choosing the model; the test set is kept held-out. Even though seed 20260101 had a slightly better score on the test set, using the performance on the test set for choosing the model leaks information about the held-out data.
 
-The cost for training was 0.19 THB/trial and total cost for the study was 2.91 THB, clearly below the budget of 150 THB. Given the cost per trial, the retraining on one configuration alone would cost 0.19 THB.
+The cost of the 12 trial study was about 2.91 THB which is obviously less than the budgeted 150 THB. This is equivalent to an average of approximately 0.24 THB per trial. One monthly retrain is about 0.24 THB by that average, an estimate rather than a verified Azure bill.
 
 One way this choice could be wrong is that the seed also reseeds
 `make_dataset.py`, so the three runs vary both model randomness and the
@@ -175,7 +220,8 @@ superior configuration.
 | Item | Value |
 |---|---|
 | Git commit | `6ccc5ee0e89d624811802e869f5e4099d1707776` |
-| DVC data version | `1c886b512c8a5c9bf723da1cd119fc80.dir` |
+| Data version | Generated dataset: `make_dataset.py --seed 20260102` |
+| Data fingerprint | `3ae9705eb3f197a3` |
 | MLflow run ID | `a81deea37f9b4659addf64908d518e7b` |
 | Training job | `mango_boot_pbpr17lrhb` |
 | Image digest | `sha256:585f50972aa5afd104c6b337fd23716a82276cb9b6a5401d7f8a0dbaf64a0d7a` |
@@ -183,15 +229,20 @@ superior configuration.
 | Val / Test ROC-AUC | `0.8733` / `0.8463` |
 
 ### Registry
-Registered as `itcs355-6688022:1` with the lineage above as tags, plus
-`stage=staging`. The installed Azure ML SDK (`azure-ai-ml 1.35.0`) had no
-public native stage-promotion API, so staging is represented with a `stage` tag.
+Registered as `itcs355-6688022:2` with the lineage above as tags, plus
+`stage=staging`. As the installed Azure ML SDK (azure-ai-ml 1.35.0) lacks a public native stage-promotion API for the workflow process, the lab staging state is expressed via the stage=staging model tag.
+
+The registered model was trained from the seed-20260102 generated dataset,
+with fingerprint 3ae9705eb3f197a3. The MLflow run a81deea37f9b4659addf64908d518e7b
+is no longer available with its original container, but the Azure job
+mango_boot_pbpr17lrhb and its preserved execution evidence are available under
+azure_trial_metrics/.
 
 ### Promotion policy
-Promotion should be managed by an appointed ML Engineer/Release Owner, and not the trainer. Evidence required: Git Commit, Data Version, MLflow Run ID, Training Job ID, Image Digest, Seed, Validation/Test Metrics, Baseline Comparison, Registry Reload Success, and Cost Profile Approval.
+Promotion of the ML model should be done by the ML engineer or release owner, and not all developers who are capable of training ML models. It will be the responsibility of the reviewer to demand proof of a reproducible lineage for the registered model before it is promoted, and these include: Git commit, data version, MLflow run ID, training job ID, container image digest, seed, and validation/test metrics. The selected model should have documented evaluation against the candidate configurations and a successful reload check from the model registry.
 
 ### Reload check
-`reload_check.py` downloaded `itcs355-6688022:1` directly from the registry,
+`reload_check.py` downloaded `itcs355-6688022:2` directly from the registry,
 deserialized it, and scored 5 held-out rows — **PASS**.
 
 **Known limitation:** `reload_check.py` splits the data with `seed=20260101`,
@@ -199,8 +250,34 @@ while the registered model was trained using data generated with
 `seed=20260102`. This proves the registry-to-inference path works but is not an
 exact reproduction of the original evaluation split.
 
+To run the Azure ML registry reload check, the environment must provide
+`AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, and `AZURE_ML_WORKSPACE`.
+
+Run:
+
+```bash
+make reload-check VERSION=2
+```
+
 ### Known limitations
 - The local MLflow file store did not persist beyond each ephemeral container;
   Azure job logs/artifacts were used to recover completed-run metrics.
 - The reload-check data split seed does not match the registered model's
   training-data seed.
+
+### Checkpoint and interruption evidence
+
+The remote tuning controller checkpoints study state after each trial and
+skips completed trials when restarted. The checkpoint/resume behavior was
+tested locally: a completed trial was recovered after restarting the
+controller, and a separate running-process test was interrupted with
+`Ctrl-C` while the checkpoint file remained intact. If the controller is interrupted while waiting for an Azure ML job, the submitted job is not automatically cancelled. A restart can therefore resubmit the interrupted configuration. A production controller should reconcile or cancel the in-flight job before resubmission to avoid duplicate work and cost.
+
+The interruption evidence is preserved in
+`reports/interrupt-resume-log.txt`. It records the checkpoint surviving the
+local `Ctrl-C` interruption and the subsequent resume behavior. The resume test then confirmed that
+the completed trial was skipped and a subsequent trial could be recorded.
+
+An actual Azure ML LowPriority interruption could not be demonstrated because
+the required LowPriority compute could not be provisioned under the available
+Azure for Students quota.

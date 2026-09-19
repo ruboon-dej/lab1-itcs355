@@ -1,0 +1,12 @@
+python -c "from src import config; from cloudlayer.factory import get_adapter; \
+	cfg=config.load(); print(get_adapter(cfg).teardown(cfg.tags(2)))"
+[]
+
+Azure ML compute state after teardown:
+Name          Compute type    State      Instance type
+------------  --------------  ---------  ---------------
+lab2-cluster  amlcompute      Succeeded  Standard_DS3_v2
+
+Azure ML compute state after deleting lab2-cluster:
+
+Note: the tag-based teardown returned [] because the CLI-created lab2-cluster did not have the lab=2 tag; it was deleted manually afterward.

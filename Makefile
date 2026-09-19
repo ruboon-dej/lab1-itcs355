@@ -6,9 +6,15 @@ IMAGE ?= itcs355-lab1
 TAG   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 PLATFORM ?= linux/amd64
 SEED ?= 20260101
+.DEFAULT_GOAL := help
 
 .PHONY: help setup cloud-check data test portability-audit train image image-push reproduce verify clean teardown \
-        tune compare reload-check serve serve-image loadtest drift inject-drift pipeline cost swap-check llm-eval llm-gate
+        tune tune-local compare reload-check serve serve-image loadtest drift inject-drift pipeline cost cost-report swap-check llm-eval llm-gate
+
+cost:
+	python scripts/cost_report.py --estimate $(EST) --actual $(ACT) --rps $(RPS) --instance $(INSTANCE)
+
+cost-report: cost
 
 help:
 	@grep -E "^[a-zA-Z_-]+:.*?## .*$$" $(MAKEFILE_LIST) | awk -F":.*?## " "{printf \"  %-20s %s\\n\", \$$1, \$$2}"
@@ -54,14 +60,17 @@ verify: ## Check the produced metric against the README claim
 
 teardown: ## Delete every resource tagged course=itcs355 for this lab
 	python -c "from src import config; from cloudlayer.factory import get_adapter; \
-	cfg=config.load(); print(get_adapter(cfg).teardown(cfg.tags(1)))"
+	cfg=config.load(); print(get_adapter(cfg).teardown(cfg.tags(2)))"
 
 clean: ## Remove local artifacts
 	rm -rf mlruns mlartifacts mlflow.db reports/metrics.json .pytest_cache
 
 # --- Lab 2 -------------------------------------------------------------------
-tune: ## Budgeted hyperparameter study (>=12 trials)
-	python -m src.tune --trials 12 --budget-thb 150
+tune: ## Budgeted hyperparameter study on managed compute
+	python scripts/tune_remote.py --trials 12 --budget-thb 150
+
+tune-local: ## Local Lab 2 development study; not valid evidence for submission
+	python -m src.tune --trials 12 --budget-thb 150 --instance local
 
 train-remote: ## Submit one trial as a managed Azure ML job
 	python scripts/train_remote.py --n-estimators 200 --max-depth 8 --seed $(SEED)
@@ -105,9 +114,6 @@ llm-gate: ## Prove the gate fails on a degraded set — expected to exit non-zer
 	python scripts/llm_eval.py --out reports/llm_eval-baseline.json >/dev/null
 	python scripts/llm_eval.py --responses evals/fixtures/triage-regressed.jsonl \
 	  --out reports/llm_eval.json --baseline reports/llm_eval-baseline.json
-
-cost: ## Build the cost report
-	python scripts/cost_report.py --estimate $(EST) --actual $(ACT) --rps $(RPS) --instance $(INSTANCE)
 
 swap-check: ## Prove the portability seam against a second provider
 	python scripts/portability_swap_check.py --second-provider $(SECOND)
