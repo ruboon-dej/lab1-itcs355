@@ -256,7 +256,7 @@ The remote tuning controller checkpoints study state after each trial and
 skips completed trials when restarted. The checkpoint/resume behavior was
 tested locally: a completed trial was recovered after restarting the
 controller, and a separate running-process test was interrupted with
-`Ctrl-C` while the checkpoint file remained intact.
+`Ctrl-C` while the checkpoint file remained intact. If the controller is interrupted while waiting for an Azure ML job, the submitted job is not automatically cancelled. A restart can therefore resubmit the interrupted configuration. A production controller should reconcile or cancel the in-flight job before resubmission to avoid duplicate work and cost.
 
 The interruption evidence is preserved in
 `reports/interrupt-resume-log.txt`. It records the checkpoint surviving the

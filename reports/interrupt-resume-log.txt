@@ -1,6 +1,6 @@
 ============================= test session starts ==============================
 platform darwin -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0
-rootdir: /Users/ruboondej-udom/Documents/public_teaching_mlaiops
+rootdir: project
 plugins: hydra-core-1.3.6, anyio-4.15.1
 collected 1 item
 

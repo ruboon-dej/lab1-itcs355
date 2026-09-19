@@ -24,7 +24,7 @@ The 12 trials were completed on Azure ML managed compute. The available evidence
 The selected configuration was `n_estimators=100`, `max_depth=4`,
 `min_samples_leaf=5`. In the 12-trial sweep it had the highest validation
 ROC-AUC at 0.8426, although the margin over the next configuration was very
-small (0.0002). The registered model uses seed 20260102.
+small (0.0002). The registered model uses seed 20260102, the highest validation ROC-AUC of the three seed reruns.
 
 The same configuration was rerun with seeds 20260101, 20260102, and 20260103,
 giving validation ROC-AUC values of 0.8426, 0.8733, and 0.8430 respectively.
