@@ -24,23 +24,19 @@ The 12 trials were completed on Azure ML managed compute. The available evidence
 The selected configuration was `n_estimators=100`, `max_depth=4`,
 `min_samples_leaf=5`. In the 12-trial sweep it had the highest validation
 ROC-AUC at 0.8426, although the margin over the next configuration was very
-small (0.0002). I used validation performance for selection rather than the
-held-out test set.
+small (0.0002). The registered model uses seed 20260102.
 
 The same configuration was rerun with seeds 20260101, 20260102, and 20260103,
 giving validation ROC-AUC values of 0.8426, 0.8733, and 0.8430 respectively.
-This shows substantial variation across the three runs. However, the seed is
-also used when generating the dataset, so this variation reflects both data
-and model randomness rather than model randomness alone.
+The standard deviation is approximately 0.018. However, the seed is also used
+when generating the dataset, so this variation reflects both data and model
+randomness rather than model randomness alone.
 
 The 12-run study cost 2.91 THB in total, or approximately 0.24 THB per trial
-as an average. This is an average study cost rather than a verified billable
-rate for an individual job. A monthly retraining estimate therefore cannot be
-treated as an exact Azure bill without job-level billing data.
+as an average. One monthly retrain is about 0.24 THB by that average, an
+estimate rather than a verified Azure bill.
 
 One way the selection could be wrong is that the small validation margin
 between the top configurations is much smaller than the variation observed
 across the seed reruns. A more controlled comparison would keep the dataset
 fixed while varying only the model seed.
-
-For a simple monthly retraining estimate, one retraining run would be approximately 0.24 THB using the 12-trial average as a rough proxy; this is an estimate, not a verified Azure monthly bill.

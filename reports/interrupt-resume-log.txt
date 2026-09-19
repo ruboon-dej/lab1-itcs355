@@ -1,0 +1,46 @@
+ITCS355 Lab 2 — Checkpoint / Interruption Evidence
+
+=== BEFORE INTERRUPTION ===
+{
+  "completed": [
+    "{\"max_depth\": 4, \"min_samples_leaf\": 1, \"n_estimators\": 100}"
+  ],
+  "spent_thb": 0.0,
+  "trials": []
+}
+
+=== AFTER RESTART ===
+PASS: completed trial is skipped on resume
+
+=== FINAL CHECKPOINT ===
+{
+  "completed": [
+    "{\"max_depth\": 4, \"min_samples_leaf\": 1, \"n_estimators\": 100}",
+    "{\"max_depth\": 4, \"min_samples_leaf\": 5, \"n_estimators\": 100}"
+  ],
+  "spent_thb": 0.0,
+  "trials": []
+}
+
+PASS: checkpoint/resume behavior works
+
+
+Actual local interruption test:
+
+Checkpoint written.
+PID: 60857
+Sleeping for 30 seconds. Interrupt this process with Ctrl-C.
+^C
+INTERRUPTED: process stopped.
+Checkpoint survived:
+{
+  "completed": [
+    "trial-1"
+  ],
+  "trials": [
+    {
+      "trial": 1,
+      "status": "completed"
+    }
+  ]
+}

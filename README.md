@@ -181,6 +181,8 @@ The required discounted-compute rerun should therefore be performed in a
 course-provided Azure subscription/workspace with sufficient Azure ML compute
 quota if one is made available.
 
+The 12-trial sweep and seed reruns were run on Dedicated Standard_DS3_v2 compute; the corresponding execution evidence is preserved under azure_trial_metrics/.
+
 ### Trials
 The 12 actual Azure ML experiments were done on 3 hyperparameters to achieve:
 `n_estimators`, `max_depth`, and `min_samples_leaf`. The total cost was roughly 2.91 THB, well within the budget of 150 THB.
@@ -197,7 +199,7 @@ re-run across 3 seeds to check stability:
 
 Seed 20260102 was chosen since validation performance is used for choosing the model; the test set is kept held-out. Even though seed 20260101 had a slightly better score on the test set, using the performance on the test set for choosing the model leaks information about the held-out data.
 
-The cost of the 12 trial study was about 2.91 THB which is obviously less than the budgeted 150 THB. This is equivalent to an average of approximately 0.24 THB per trial. This observation would make a retraining session relatively cheap. But the average cannot be considered as the billable rate per job.
+The cost of the 12 trial study was about 2.91 THB which is obviously less than the budgeted 150 THB. This is equivalent to an average of approximately 0.24 THB per trial. One monthly retrain is about 0.24 THB by that average, an estimate rather than a verified Azure bill.
 
 One way this choice could be wrong is that the seed also reseeds
 `make_dataset.py`, so the three runs vary both model randomness and the
@@ -212,7 +214,8 @@ superior configuration.
 | Item | Value |
 |---|---|
 | Git commit | `6ccc5ee0e89d624811802e869f5e4099d1707776` |
-| DVC data version | `1c886b512c8a5c9bf723da1cd119fc80.dir` |
+| Data version | Generated dataset: `make_dataset.py --seed 20260102` |
+| Data fingerprint | `3ae9705eb3f197a3` |
 | MLflow run ID | `a81deea37f9b4659addf64908d518e7b` |
 | Training job | `mango_boot_pbpr17lrhb` |
 | Image digest | `sha256:585f50972aa5afd104c6b337fd23716a82276cb9b6a5401d7f8a0dbaf64a0d7a` |
@@ -222,6 +225,12 @@ superior configuration.
 ### Registry
 Registered as `itcs355-6688022:2` with the lineage above as tags, plus
 `stage=staging`. As the installed Azure ML SDK (azure-ai-ml 1.35.0) lacks a public native stage-promotion API for the workflow process, the lab staging state is expressed via the stage=staging model tag.
+
+The registered model was trained from the seed-20260102 generated dataset,
+with fingerprint 3ae9705eb3f197a3. The MLflow run a81deea37f9b4659addf64908d518e7b
+is no longer available with its original container, but the Azure job
+mango_boot_pbpr17lrhb and its preserved execution evidence are available under
+azure_trial_metrics/.
 
 ### Promotion policy
 Promotion of the ML model should be done by the ML engineer or release owner, and not all developers who are capable of training ML models. It will be the responsibility of the reviewer to demand proof of a reproducible lineage for the registered model before it is promoted, and these include: Git commit, DVC data version, MLflow run ID, training job ID, container image digest, seed, and validation/test metrics. The selected model should have documented evaluation against the candidate configurations and a successful reload check from the model registry.
@@ -249,8 +258,9 @@ tested locally: a completed trial was recovered after restarting the
 controller, and a separate running-process test was interrupted with
 `Ctrl-C` while the checkpoint file remained intact.
 
-The interrupted-process test preserved the completed trial in
-`/tmp/interrupt_resume_checkpoint.json`. The resume test then confirmed that
+The interruption evidence is preserved in
+`reports/interrupt-resume-log.txt`. It records the checkpoint surviving the
+local `Ctrl-C` interruption and the subsequent resume behavior. The resume test then confirmed that
 the completed trial was skipped and a subsequent trial could be recorded.
 
 An actual Azure ML LowPriority interruption could not be demonstrated because
