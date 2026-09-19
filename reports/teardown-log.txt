@@ -9,3 +9,4 @@ lab2-cluster  amlcompute      Succeeded  Standard_DS3_v2
 
 Azure ML compute state after deleting lab2-cluster:
 
+Note: the tag-based teardown returned [] because the CLI-created lab2-cluster did not have the lab=2 tag; it was deleted manually afterward.

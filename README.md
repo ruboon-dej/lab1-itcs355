@@ -164,7 +164,9 @@ a billing requirement unrelated to the lab.
 Therefore, the remaining cloud-training work is blocked by the subscription's
 Azure ML compute quota rather than by the training implementation.
 
-The initial cloud-access failure was a storage-access permission issue; the required storage permission had not yet been granted.
+### Initial permission failure
+
+The first remote training submission used the compute managed identity `9144aef5-...`. It already had `Storage Blob Data Contributor` on the storage account, but was missing `AcrPull` on the `itcs3556688022` container registry. The job therefore could not pull the training image. Adding `AcrPull` to the compute identity resolved this permission failure.
 
 Evidence:
 
