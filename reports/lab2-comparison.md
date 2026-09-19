@@ -42,3 +42,5 @@ One way the selection could be wrong is that the small validation margin
 between the top configurations is much smaller than the variation observed
 across the seed reruns. A more controlled comparison would keep the dataset
 fixed while varying only the model seed.
+
+For a simple monthly retraining estimate, one retraining run would be approximately 0.24 THB using the 12-trial average as a rough proxy; this is an estimate, not a verified Azure monthly bill.
