@@ -108,74 +108,95 @@ def main() -> None:
             trial_cost = elapsed_h * rate
 
             state["spent_thb"] += trial_cost
-            state["completed"].append(key)
 
-            trial_record = {
+            state["trials"].append({
                 "trial": i,
                 "params": params,
                 "seed": args.seed,
                 "job_id": job_id,
-                "mlflow_run_id": result["mlflow_run_id"],
-                "data_fingerprint": result["data_fingerprint"],
-                "data_version": result["data_version"],
-                "git_commit": result["git_commit"],
-                "image_digest": result["image_digest"],
+                "status": "failed",
+                "error": str(e),
                 "instance_type": args.instance,
                 "compute_tier": "low_priority",
                 "duration_s": round(elapsed_s, 3),
-                "training_duration_s": result["training_duration_s"],
                 "cost_thb": round(trial_cost, 4),
-                "val_roc_auc": result["val_roc_auc"],
-                "val_pr_auc": result["val_pr_auc"],
-                "test_roc_auc": result["test_roc_auc"],
-                "test_pr_auc": result["test_pr_auc"],
-            }
-
-            state["trials"].append(trial_record)
-
-            # Add controller-side cost and job lineage to the same persistent MLflow run.
-            mlflow.set_tracking_uri(cfg.mlflow_tracking_uri)
-
-            with mlflow.start_run(
-                run_id=result["mlflow_run_id"]
-            ):
-                mlflow.log_metrics(
-                    {
-                        "duration_s": round(elapsed_s, 3),
-                        "cost_thb": round(trial_cost, 4),
-                    }
-                )
-
-                mlflow.set_tags(
-                    {
-                        "training_job_id": job_id,
-                        "instance_type": args.instance,
-                        "compute_tier": "low_priority",
-                    }
-                )
+            })
 
             save_checkpoint(args.checkpoint, state)
 
             print(
                 f"trial {i}: {params} -> "
-                f"job_id={job_id} "
-                f"val_roc_auc={result['val_roc_auc']:.4f} "
-                f"test_roc_auc={result['test_roc_auc']:.4f} "
+                f"job_id={job_id} FAILED "
                 f"duration={elapsed_s:.1f}s "
                 f"cost={trial_cost:.4f} THB "
                 f"cumulative={state['spent_thb']:.4f}"
             )
             continue
 
-        elapsed_h = (time.perf_counter() - started) / 3600.0
+        elapsed_s = time.perf_counter() - started
+        elapsed_h = elapsed_s / 3600.0
         trial_cost = elapsed_h * rate
+
         state["spent_thb"] += trial_cost
         state["completed"].append(key)
+
+        trial_record = {
+            "trial": i,
+            "params": params,
+            "seed": args.seed,
+            "job_id": job_id,
+            "status": "completed",
+            "mlflow_run_id": result["mlflow_run_id"],
+            "data_fingerprint": result["data_fingerprint"],
+            "data_version": result["data_version"],
+            "git_commit": result["git_commit"],
+            "image_digest": result["image_digest"],
+            "instance_type": args.instance,
+            "compute_tier": "low_priority",
+            "duration_s": round(elapsed_s, 3),
+            "training_duration_s": result["training_duration_s"],
+            "cost_thb": round(trial_cost, 4),
+            "val_roc_auc": result["val_roc_auc"],
+            "val_pr_auc": result["val_pr_auc"],
+            "test_roc_auc": result["test_roc_auc"],
+            "test_pr_auc": result["test_pr_auc"],
+        }
+
+        state["trials"].append(trial_record)
+
+        # Add controller-side cost and job lineage to the same persistent MLflow run.
+        mlflow.set_tracking_uri(cfg.mlflow_tracking_uri)
+
+        with mlflow.start_run(
+            run_id=result["mlflow_run_id"]
+        ):
+            mlflow.log_metrics(
+                {
+                    "duration_s": round(elapsed_s, 3),
+                    "cost_thb": round(trial_cost, 4),
+                }
+            )
+
+            mlflow.set_tags(
+                {
+                    "training_job_id": job_id,
+                    "instance_type": args.instance,
+                    "compute_tier": "low_priority",
+                }
+            )
+
         save_checkpoint(args.checkpoint, state)
 
-        print(f"trial {i}: {params} -> job_id={job_id} "
-              f"duration={elapsed_h * 3600:.1f}s cost={trial_cost:.4f} THB  "
-              f"cumulative={state['spent_thb']:.4f}  studio_url={result['studio_url']}")
+        print(
+            f"trial {i}: {params} -> "
+            f"job_id={job_id} "
+            f"val_roc_auc={result['val_roc_auc']:.4f} "
+            f"test_roc_auc={result['test_roc_auc']:.4f} "
+            f"duration={elapsed_s:.1f}s "
+            f"cost={trial_cost:.4f} THB "
+            f"cumulative={state['spent_thb']:.4f} "
+            f"studio_url={result['studio_url']}"
+        )
 
     print(f"\nspent {state['spent_thb']:.4f} of {args.budget_thb} THB")
     if skipped:
