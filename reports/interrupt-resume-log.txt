@@ -1,46 +1,147 @@
-ITCS355 Lab 2 — Checkpoint / Interruption Evidence
+============================= test session starts ==============================
+platform darwin -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/ruboondej-udom/Documents/public_teaching_mlaiops
+plugins: hydra-core-1.3.6, anyio-4.15.1
+collected 1 item
 
-=== BEFORE INTERRUPTION ===
+tests/test_tune_resume.py === FIRST RUN ===
+trial 0: submitting {'n_estimators': 100, 'max_depth': 4, 'min_samples_leaf': 1} ...
+trial 0: {'n_estimators': 100, 'max_depth': 4, 'min_samples_leaf': 1} -> job_id=fake-job-1 val_roc_auc=0.8400 test_roc_auc=0.8500 duration=0.0s cost=0.0000 THB cumulative=0.0000 studio_url=https://example.com/fake-job-1
+trial 1: submitting {'n_estimators': 100, 'max_depth': 4, 'min_samples_leaf': 5} ...
+INTERRUPTED: controller stopped.
+
+=== CHECKPOINT AFTER INTERRUPTION ===
 {
   "completed": [
     "{\"max_depth\": 4, \"min_samples_leaf\": 1, \"n_estimators\": 100}"
   ],
-  "spent_thb": 0.0,
-  "trials": []
+  "spent_thb": 4.3972654061184987e-10,
+  "trials": [
+    {
+      "trial": 0,
+      "params": {
+        "n_estimators": 100,
+        "max_depth": 4,
+        "min_samples_leaf": 1
+      },
+      "seed": 20260101,
+      "job_id": "fake-job-1",
+      "status": "completed",
+      "mlflow_run_id": "fake-run-1",
+      "data_fingerprint": "fake-fingerprint",
+      "data_version": "fake-data-version",
+      "git_commit": "fake-git-commit",
+      "image_digest": "fake-image-digest",
+      "instance_type": "Standard_DS3_v2",
+      "compute_tier": "low_priority",
+      "duration_s": 0.0,
+      "training_duration_s": 1.0,
+      "cost_thb": 0.0,
+      "val_roc_auc": 0.84,
+      "val_pr_auc": 0.39,
+      "test_roc_auc": 0.85,
+      "test_pr_auc": 0.49
+    }
+  ]
 }
 
-=== AFTER RESTART ===
-PASS: completed trial is skipped on resume
+=== SECOND RUN / RESUME ===
+trial 0: already done, skipping (resumed from checkpoint)
+trial 1: submitting {'n_estimators': 100, 'max_depth': 4, 'min_samples_leaf': 5} ...
+trial 1: {'n_estimators': 100, 'max_depth': 4, 'min_samples_leaf': 5} -> job_id=fake-job-1 val_roc_auc=0.8400 test_roc_auc=0.8500 duration=0.0s cost=0.0000 THB cumulative=0.0000 studio_url=https://example.com/fake-job-1
+trial 2: submitting {'n_estimators': 100, 'max_depth': 8, 'min_samples_leaf': 1} ...
+trial 2: {'n_estimators': 100, 'max_depth': 8, 'min_samples_leaf': 1} -> job_id=fake-job-2 val_roc_auc=0.8400 test_roc_auc=0.8500 duration=0.0s cost=0.0000 THB cumulative=0.0000 studio_url=https://example.com/fake-job-2
+
+spent 0.0000 of 150.0 THB
 
 === FINAL CHECKPOINT ===
 {
   "completed": [
     "{\"max_depth\": 4, \"min_samples_leaf\": 1, \"n_estimators\": 100}",
-    "{\"max_depth\": 4, \"min_samples_leaf\": 5, \"n_estimators\": 100}"
+    "{\"max_depth\": 4, \"min_samples_leaf\": 5, \"n_estimators\": 100}",
+    "{\"max_depth\": 8, \"min_samples_leaf\": 1, \"n_estimators\": 100}"
   ],
-  "spent_thb": 0.0,
-  "trials": []
-}
-
-PASS: checkpoint/resume behavior works
-
-
-Actual local interruption test:
-
-Checkpoint written.
-PID: 60857
-Sleeping for 30 seconds. Interrupt this process with Ctrl-C.
-^C
-INTERRUPTED: process stopped.
-Checkpoint survived:
-{
-  "completed": [
-    "trial-1"
-  ],
+  "spent_thb": 9.952863264414998e-10,
   "trials": [
     {
+      "trial": 0,
+      "params": {
+        "n_estimators": 100,
+        "max_depth": 4,
+        "min_samples_leaf": 1
+      },
+      "seed": 20260101,
+      "job_id": "fake-job-1",
+      "status": "completed",
+      "mlflow_run_id": "fake-run-1",
+      "data_fingerprint": "fake-fingerprint",
+      "data_version": "fake-data-version",
+      "git_commit": "fake-git-commit",
+      "image_digest": "fake-image-digest",
+      "instance_type": "Standard_DS3_v2",
+      "compute_tier": "low_priority",
+      "duration_s": 0.0,
+      "training_duration_s": 1.0,
+      "cost_thb": 0.0,
+      "val_roc_auc": 0.84,
+      "val_pr_auc": 0.39,
+      "test_roc_auc": 0.85,
+      "test_pr_auc": 0.49
+    },
+    {
       "trial": 1,
-      "status": "completed"
+      "params": {
+        "n_estimators": 100,
+        "max_depth": 4,
+        "min_samples_leaf": 5
+      },
+      "seed": 20260101,
+      "job_id": "fake-job-1",
+      "status": "completed",
+      "mlflow_run_id": "fake-run-1",
+      "data_fingerprint": "fake-fingerprint",
+      "data_version": "fake-data-version",
+      "git_commit": "fake-git-commit",
+      "image_digest": "fake-image-digest",
+      "instance_type": "Standard_DS3_v2",
+      "compute_tier": "low_priority",
+      "duration_s": 0.0,
+      "training_duration_s": 1.0,
+      "cost_thb": 0.0,
+      "val_roc_auc": 0.84,
+      "val_pr_auc": 0.39,
+      "test_roc_auc": 0.85,
+      "test_pr_auc": 0.49
+    },
+    {
+      "trial": 2,
+      "params": {
+        "n_estimators": 100,
+        "max_depth": 8,
+        "min_samples_leaf": 1
+      },
+      "seed": 20260101,
+      "job_id": "fake-job-2",
+      "status": "completed",
+      "mlflow_run_id": "fake-run-2",
+      "data_fingerprint": "fake-fingerprint",
+      "data_version": "fake-data-version",
+      "git_commit": "fake-git-commit",
+      "image_digest": "fake-image-digest",
+      "instance_type": "Standard_DS3_v2",
+      "compute_tier": "low_priority",
+      "duration_s": 0.0,
+      "training_duration_s": 1.0,
+      "cost_thb": 0.0,
+      "val_roc_auc": 0.84,
+      "val_pr_auc": 0.39,
+      "test_roc_auc": 0.85,
+      "test_pr_auc": 0.49
     }
   ]
 }
+
+PASS: tune_remote.py checkpoint/resume behavior works
+.
+
+============================== 1 passed in 1.84s ===============================
