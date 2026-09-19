@@ -117,7 +117,7 @@ requirements.txt was regenerated with pip-compile --generate-hashes; one transit
 unpinned transitive packages.
 **DVC remote access:** Raw data is versioned in a private Azure Blob Storage container (`itcs355` on account `itcs3556688022`) and requires Azure credentials with
 `Storage Blob Data Reader` access to pull via `dvc pull`. This is **not required to reproduce the graded metric** — `make reproduce` regenerates the raw dataset deterministically
-from the fixed seedvia `scripts/make_dataset.py`, with no dependency on DVC or cloud access.
+from the fixed seed via `scripts/make_dataset.py`, with no dependency on DVC or cloud access.
 
 ---
 
@@ -164,10 +164,6 @@ a billing requirement unrelated to the lab.
 Therefore, the remaining cloud-training work is blocked by the subscription's
 Azure ML compute quota rather than by the training implementation.
 
-### Initial permission failure
-
-The first remote training submission used the compute managed identity `9144aef5-...`. It already had `Storage Blob Data Contributor` on the storage account, but was missing `AcrPull` on the `itcs3556688022` container registry. The job therefore could not pull the training image. Adding `AcrPull` to the compute identity resolved this permission failure.
-
 Evidence:
 
 - `lab2-lowpri` — `Standard_DS3_v2`, LowPriority — provisioning failed with
@@ -186,6 +182,10 @@ course-provided Azure subscription/workspace with sufficient Azure ML compute
 quota if one is made available.
 
 The 12-trial sweep and seed reruns were run on Dedicated Standard_DS3_v2 compute; the corresponding execution evidence is preserved under azure_trial_metrics/.
+
+### Initial permission failure
+
+The first remote training submission used the compute managed identity `9144aef5-...`. It already had `Storage Blob Data Contributor` on the storage account, but was missing `AcrPull` on the `itcs3556688022` container registry. The job therefore could not pull the training image. Adding `AcrPull` to the compute identity resolved this permission failure.
 
 ### Trials
 The 12 actual Azure ML experiments were done on 3 hyperparameters to achieve:
@@ -237,7 +237,7 @@ mango_boot_pbpr17lrhb and its preserved execution evidence are available under
 azure_trial_metrics/.
 
 ### Promotion policy
-Promotion of the ML model should be done by the ML engineer or release owner, and not all developers who are capable of training ML models. It will be the responsibility of the reviewer to demand proof of a reproducible lineage for the registered model before it is promoted, and these include: Git commit, DVC data version, MLflow run ID, training job ID, container image digest, seed, and validation/test metrics. The selected model should have documented evaluation against the candidate configurations and a successful reload check from the model registry.
+Promotion of the ML model should be done by the ML engineer or release owner, and not all developers who are capable of training ML models. It will be the responsibility of the reviewer to demand proof of a reproducible lineage for the registered model before it is promoted, and these include: Git commit, data version, MLflow run ID, training job ID, container image digest, seed, and validation/test metrics. The selected model should have documented evaluation against the candidate configurations and a successful reload check from the model registry.
 
 ### Reload check
 `reload_check.py` downloaded `itcs355-6688022:2` directly from the registry,
