@@ -21,4 +21,24 @@ The 12 trials were completed on Azure ML managed compute. The available evidence
 
 ## Which model did you register, and why?
 
-This configuration was registered based on seed `20260102` with the parameters of `n_estimators=100`, `max_depth=4`, `min_samples_leaf=5`. I did not use only one metric to make the decision; in fact, the `300/4/5` configuration provided an even better test ROC-AUC value (0.8545), whereas the ROC-AUC of the selected configuration in seed rerun was 0.8733. For this configuration, the validation ROC-AUC values were approximately equal to 0.8426, 0.8733, and 0.8430 for seeds and have notable variance (SD around 0.018). The 12-run experiment cost a total of 2.91 THB or about 0.24 THB per run; the monthly retraining cost at one run estimate is then about 0.24 THB (though exact bill differs). One potential mistake in the configuration selection was that the seed not only influences model but also the data set generation; thus, the observed variance may contain both aspects.
+The selected configuration was `n_estimators=100`, `max_depth=4`,
+`min_samples_leaf=5`. In the 12-trial sweep it had the highest validation
+ROC-AUC at 0.8426, although the margin over the next configuration was very
+small (0.0002). I used validation performance for selection rather than the
+held-out test set.
+
+The same configuration was rerun with seeds 20260101, 20260102, and 20260103,
+giving validation ROC-AUC values of 0.8426, 0.8733, and 0.8430 respectively.
+This shows substantial variation across the three runs. However, the seed is
+also used when generating the dataset, so this variation reflects both data
+and model randomness rather than model randomness alone.
+
+The 12-run study cost 2.91 THB in total, or approximately 0.24 THB per trial
+as an average. This is an average study cost rather than a verified billable
+rate for an individual job. A monthly retraining estimate therefore cannot be
+treated as an exact Azure bill without job-level billing data.
+
+One way the selection could be wrong is that the small validation margin
+between the top configurations is much smaller than the variation observed
+across the seed reruns. A more controlled comparison would keep the dataset
+fixed while varying only the model seed.

@@ -141,8 +141,45 @@ course, and rotating it is your responsibility, not the grader's.
 ## Lab 2 — Cloud Training, Model Selection, Registry, and Reproducible Deployment
 
 ### Cloud training
-Training ran on Azure ML managed compute (Standard_DS3_v2, dedicated tier — the
-workspace had no low-priority/spot quota available). Compute scales to 0 when idle.
+
+The Lab 2 implementation was prepared for Azure ML managed compute using
+discounted LowPriority compute. The intended compute was `Standard_DS3_v2`
+with `low_priority` tier.
+
+The workspace could not provision the required compute under the available
+Azure for Students subscription. The `lab2-lowpri` compute failed with
+`ClusterMinNodesExceedCoreQuota`. Azure reported that the subscription had
+0 vCPUs available to Azure ML managed compute.
+
+To verify that the failure was not specific to the DS3_v2 instance size, a
+second LowPriority compute using `Standard_D2s_v3` (2 vCPUs) was also created.
+It failed with the same `ClusterMinNodesExceedCoreQuota` error, reporting that
+the subscription's total vCPU quota was 0.
+
+The Azure Portal also rejected a quota-increase request because the current
+subscription is not eligible for a quota increase without upgrading to
+Pay-As-You-Go. I did not upgrade the subscription because this would introduce
+a billing requirement unrelated to the lab.
+
+Therefore, the remaining cloud-training work is blocked by the subscription's
+Azure ML compute quota rather than by the training implementation.
+
+Evidence:
+
+- `lab2-lowpri` — `Standard_DS3_v2`, LowPriority — provisioning failed with
+  `ClusterMinNodesExceedCoreQuota`.
+- `lab2-lowpri-d2` — `Standard_D2s_v3`, LowPriority — provisioning failed with
+  `ClusterMinNodesExceedCoreQuota`.
+- Azure CLI reported `lowPriorityCores` quota of 3 for the region, but Azure ML
+  managed compute reported a total vCPU quota of 0.
+- Azure Portal quota request was rejected because the Azure for Students
+  subscription is not eligible for a quota increase.
+- Quota-request trace ID:
+  `048fc0e0-68d6-433e-a432-42db5e788a8e`
+
+The required discounted-compute rerun should therefore be performed in a
+course-provided Azure subscription/workspace with sufficient Azure ML compute
+quota if one is made available.
 
 ### Trials
 The 12 actual Azure ML experiments were done on 3 hyperparameters to achieve:
