@@ -29,6 +29,7 @@ os.environ.pop("MLFLOW_RUN_ID", None)
 os.environ["MLFLOW_ALLOW_FILE_STORE"] = "true"
 mlflow.set_tracking_uri("file:./mlruns")
 
+
 def git_commit() -> str:
     try:
         out = subprocess.run(
@@ -48,6 +49,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=seeds.DEFAULT_SEED)
     p.add_argument("--experiment", default="itcs355-lab1")
     p.add_argument("--run-name", default=None)
+    p.add_argument("--data-path", type=Path, default=None)
     p.add_argument("--metrics-out", type=Path, default=None,
                    help="Write final metrics as JSON. Used by `make verify`.")
     return p.parse_args()
@@ -58,8 +60,10 @@ def main() -> None:
     cfg = config.load(strict=False)
     seed = seeds.set_all(args.seed)
 
-    df = data.load_raw(cfg.raw_path)
-    fingerprint = data.data_fingerprint(cfg.raw_path)
+    data_path = args.data_path or cfg.raw_path
+    df = data.load_raw(data_path)
+    fingerprint = data.data_fingerprint(data_path)
+
     train_df, val_df, test_df = data.split(df, seed=seed)
 
     if not os.environ.get("MLFLOW_RUN_ID"):
@@ -103,10 +107,16 @@ def main() -> None:
         metrics: dict[str, float] = {}
         for name, part in (("val", val_df), ("test", test_df)):
             proba = model.predict_proba(part[data.FEATURES])[:, 1]
-            metrics[f"{name}_roc_auc"] = float(roc_auc_score(part[data.TARGET], proba))
-            metrics[f"{name}_pr_auc"] = float(average_precision_score(part[data.TARGET], proba))
+            metrics[f"{name}_roc_auc"] = float(
+                roc_auc_score(part[data.TARGET], proba)
+            )
+            metrics[f"{name}_pr_auc"] = float(
+                average_precision_score(part[data.TARGET], proba)
+            )
+
         mlflow.log_metrics(metrics)
         mlflow.sklearn.log_model(model, name="model")
+
         import joblib
         if args.metrics_out:
             args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
