@@ -240,3 +240,19 @@ exact reproduction of the original evaluation split.
   Azure job logs/artifacts were used to recover completed-run metrics.
 - The reload-check data split seed does not match the registered model's
   training-data seed.
+
+### Checkpoint and interruption evidence
+
+The remote tuning controller checkpoints study state after each trial and
+skips completed trials when restarted. The checkpoint/resume behavior was
+tested locally: a completed trial was recovered after restarting the
+controller, and a separate running-process test was interrupted with
+`Ctrl-C` while the checkpoint file remained intact.
+
+The interrupted-process test preserved the completed trial in
+`/tmp/interrupt_resume_checkpoint.json`. The resume test then confirmed that
+the completed trial was skipped and a subsequent trial could be recorded.
+
+An actual Azure ML LowPriority interruption could not be demonstrated because
+the required LowPriority compute could not be provisioned under the available
+Azure for Students quota.
