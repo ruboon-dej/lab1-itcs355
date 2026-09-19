@@ -183,6 +183,8 @@ quota if one is made available.
 
 The 12-trial sweep and seed reruns were run on Dedicated Standard_DS3_v2 compute; the corresponding execution evidence is preserved under azure_trial_metrics/.
 
+The current training adapter enforces LowPriority compute for new Lab 2 submissions; the historical Dedicated runs above were completed before this guard was added and are retained as experimental evidence because the required LowPriority compute could not be provisioned.
+
 ### Initial permission failure
 
 The first remote training submission used the compute managed identity `9144aef5-...`. It already had `Storage Blob Data Contributor` on the storage account, but was missing `AcrPull` on the `itcs3556688022` container registry. The job therefore could not pull the training image. Adding `AcrPull` to the compute identity resolved this permission failure.
