@@ -243,6 +243,8 @@ deserialized it, and scored 5 held-out rows — **PASS**.
 while the registered model was trained using data generated with
 `seed=20260102`. This proves the registry-to-inference path works but is not an
 exact reproduction of the original evaluation split.
+To run the Azure ML registry reload check, the environment must provide
+`AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, and `AZURE_ML_WORKSPACE`.
 
 ### Known limitations
 - The local MLflow file store did not persist beyond each ephemeral container;
