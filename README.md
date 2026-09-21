@@ -281,3 +281,109 @@ the completed trial was skipped and a subsequent trial could be recorded.
 An actual Azure ML LowPriority interruption could not be demonstrated because
 the required LowPriority compute could not be provisioned under the available
 Azure for Students quota.
+
+---
+
+## Lab 3 — Serving, Load Testing, Canary/Rollback, and Cost
+
+Lab 3 highlights serving the provider-independent model, Azure ML managed online deployment, load testing, canary traffic, and serving cost analysis.
+
+### Serving
+
+The FastAPI service exposes:
+
+* `POST /predict` — single prediction
+* `POST /predict/batch` — batch prediction
+* `GET /health` — liveness check
+* `GET /ready` — readiness check
+
+The model loads just once when the application starts up. The responses include the model version while the requests have the request ID and latency recorded.
+
+Run the service locally with:
+
+```bash
+make serve
+```
+
+Build the serving image with:
+
+```bash
+make serve-image
+```
+
+Deploy the registered model to Azure ML with:
+
+```bash
+make deploy VERSION=2
+```
+
+Run a smoke test with:
+
+```bash
+make smoke
+```
+
+### Load testing
+
+The k6 test supports three concurrency levels, batch requests, and payload-size experiments.
+
+The p95 latency target was declared **before measurement** as:
+
+```text
+p95 < 200 ms
+```
+
+Run the standard load test with:
+
+```bash
+make loadtest TARGET=https://<endpoint>/predict
+```
+
+Batch testing can be run with:
+
+```bash
+k6 run -e TARGET=https://<endpoint>/predict/batch \
+       -e VUS=1 \
+       -e BATCH=true \
+       -e BATCH_SIZE=100 \
+       loadtest/k6.js
+```
+
+Load-test evidence is preserved in:
+
+* `reports/lab3-load.md`
+* `reports/lab3-report.md`
+
+### Canary and rollback
+
+The Lab 3 canary exercise deploys a second registered model version as a separate deployment and routes a controlled percentage of endpoint traffic to it.
+
+The observed canary experiment used:
+
+```text
+blue: 90%
+green: 10%
+```
+
+Degradation was detected using aggregate latency metrics rather than model-version identity. The canary was rolled back to:
+
+```text
+blue: 100%
+green: 0%
+```
+
+The final traffic state and timestamps are recorded in `reports/lab3-report.md`.
+
+### Cost
+
+Serving cost is estimated based on the obtained endpoint throughput measurement, hourly instance rate, and utilization estimate. The Lab 3 report provides the cost of 1,000 predictions and the batch break-even point.
+
+### Teardown
+
+After testing, delete the Azure ML online endpoint and other Lab 3 resources rather than leaving the endpoint running.
+
+The adapter teardown logic uses the Lab 3 resource tags:
+
+```bash
+make teardown
+```

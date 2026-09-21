@@ -22,8 +22,18 @@ import time
 from typing import Any
 from urllib.parse import urlparse
 
-from azure.ai.ml import Input, MLClient, Output, command
-from azure.ai.ml.entities import Environment, Model
+from azure.ai.ml import (
+    Input,
+    MLClient,
+    Output,
+    command,
+)
+from azure.ai.ml.entities import (
+    Environment,
+    ManagedOnlineDeployment,
+    ManagedOnlineEndpoint,
+    Model,
+)
 from azure.ai.ml.constants import AssetTypes
 from azure.identity import DefaultAzureCredential
 from azure.core.exceptions import HttpResponseError
@@ -360,6 +370,201 @@ class AzureAdapter(CloudAdapter):
             ),
             "metrics": metrics,
         }
+
+    def deploy(self, model_ref: str, endpoint: str, instance: str) -> str:
+        """Deploy a registered Azure ML model to a managed online endpoint.
+
+        model_ref accepts:
+          - "model-name:version"
+          - "version" (uses MODEL_REGISTRY_NAME)
+        """
+        ml_client = self._ml_client()
+
+        # Resolve model name/version.
+        if ":" in model_ref:
+            model_name, model_version = model_ref.rsplit(":", 1)
+        else:
+            model_name = self.cfg.model_registry_name
+            model_version = model_ref
+
+        model = ml_client.models.get(
+            name=model_name,
+            version=model_version,
+        )
+
+        # The serving image is built locally first by `make deploy`.
+        image_tag = os.environ.get(
+            "SERVE_IMAGE_TAG",
+            "itcs355-serve:latest",
+        )
+
+        if ":" not in image_tag:
+            image_tag = f"itcs355-serve:{image_tag}"
+        image_uri = self.push_image(image_tag)
+
+        # Provider-specific Azure routes stay here.
+        environment = Environment(
+            name=f"{endpoint}-env",
+            image=image_uri,
+            inference_config={
+                "liveness_route": {
+                    "port": 8080,
+                    "path": "/health",
+                },
+                "readiness_route": {
+                    "port": 8080,
+                    "path": "/ready",
+                },
+                "scoring_route": {
+                    "port": 8080,
+                    "path": "/predict",
+                },
+            },
+        )
+
+        online_endpoint = ManagedOnlineEndpoint(
+            name=endpoint,
+            description="ITCS355 Lab 3 model serving endpoint",
+            auth_mode="key",
+            tags={
+                **self.cfg.tags(3),
+                "model_name": model_name,
+                "model_version": str(model_version),
+            },
+        )
+
+        ml_client.online_endpoints.begin_create_or_update(
+            online_endpoint
+        ).result()
+
+        deployment = ManagedOnlineDeployment(
+            name="blue",
+            endpoint_name=endpoint,
+            model=model,
+            environment=environment,
+            environment_variables={
+                "MODEL_VERSION": str(model_version),
+            },
+            instance_type=instance,
+            instance_count=1,
+        )
+
+        ml_client.online_deployments.begin_create_or_update(
+            deployment
+        ).result()
+
+        # Send all endpoint traffic to the new deployment.
+        endpoint_update = ml_client.online_endpoints.get(endpoint)
+        endpoint_update.traffic = {"blue": 100}
+        ml_client.online_endpoints.begin_create_or_update(
+            endpoint_update
+        ).result()
+
+        return endpoint
+
+
+    def deploy_canary(
+        self,
+        model_ref: str,
+        endpoint: str,
+        instance: str,
+    ) -> str:
+        """Deploy a second model version under an existing Azure endpoint."""
+        ml_client = self._ml_client()
+
+        if ":" in model_ref:
+            model_name, model_version = model_ref.rsplit(":", 1)
+        else:
+            model_name = self.cfg.model_registry_name
+            model_version = model_ref
+
+        model = ml_client.models.get(
+            name=model_name,
+            version=model_version,
+        )
+
+        image_tag = os.environ.get(
+            "SERVE_IMAGE_TAG",
+            "itcs355-serve:latest",
+        )
+        if ":" not in image_tag:
+            image_tag = f"itcs355-serve:{image_tag}"
+        image_uri = self.push_image(image_tag)
+
+        environment = Environment(
+            name=f"{endpoint}-env",
+            image=image_uri,
+            inference_config={
+                "liveness_route": {
+                    "port": 8080,
+                    "path": "/health",
+                },
+                "readiness_route": {
+                    "port": 8080,
+                    "path": "/ready",
+                },
+                "scoring_route": {
+                    "port": 8080,
+                    "path": "/predict",
+                },
+            },
+        )
+
+        deployment = ManagedOnlineDeployment(
+            name="green",
+            endpoint_name=endpoint,
+            model=model,
+            environment=environment,
+            environment_variables={
+                "MODEL_VERSION": str(model_version),
+            },
+            instance_type=instance,
+            instance_count=1,
+        )
+
+        ml_client.online_deployments.begin_create_or_update(
+            deployment
+        ).result()
+
+        return endpoint
+
+
+    def invoke(
+        self,
+        endpoint: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Invoke the Azure managed online endpoint."""
+        ml_client = self._ml_client()
+
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".json",
+            delete=False,
+        ) as request_file:
+            json.dump(payload, request_file)
+            request_path = request_file.name
+
+        try:
+            response = ml_client.online_endpoints.invoke(
+                endpoint_name=endpoint,
+                request_file=request_path,
+                deployment_name="blue",
+            )
+
+            if isinstance(response, bytes):
+                response = response.decode("utf-8")
+
+            if isinstance(response, str):
+                return json.loads(response)
+
+            if isinstance(response, dict):
+                return response
+
+            return json.loads(str(response))
+
+        finally:
+            Path(request_path).unlink(missing_ok=True)
     
     def teardown(self, tags: dict[str, str]) -> list[str]:
         """Delete Azure ML jobs and compute resources carrying the given tags."""
@@ -384,6 +589,22 @@ class AzureAdapter(CloudAdapter):
             ):
                 ml_client.compute.begin_delete(compute.name)
                 deleted.append(f"compute:{compute.name}")
+
+        # Lab 3: online endpoints are tagged separately from jobs/compute.
+        for endpoint in ml_client.online_endpoints.list():
+            endpoint_tags = getattr(endpoint, "tags", {}) or {}
+            if all(
+                endpoint_tags.get(key) == value
+                for key, value in tags.items()
+            ):
+                try:
+                    ml_client.online_endpoints.begin_delete(
+                        endpoint.name
+                    ).result()
+                    deleted.append(f"endpoint:{endpoint.name}")
+                except HttpResponseError as exc:
+                    if exc.status_code != 404:
+                        raise
 
         return deleted
     # submit_training / register_model  -> Lab 2 (Azure ML command job + model registry)

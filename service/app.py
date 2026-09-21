@@ -32,28 +32,66 @@ STATE: dict[str, Any] = {"model": None, "version": os.environ.get("MODEL_VERSION
 def _load_model():
     """Load once, at startup. Never per request.
 
-    Loading per request is the commonest cause of a p99 that looks nothing like p50, and
-    it is the first thing to check when your latency distribution has a long tail.
+    The deployment adapter supplies a concrete MODEL_PATH for cloud deployments.
+    Azure ML custom-model deployments mount the registered model under
+    AZUREML_MODEL_DIR.
     """
+    from pathlib import Path
+    import joblib
+
+    # Explicit model path: local development or provider adapter.
+    model_path = os.environ.get("MODEL_PATH")
+    if model_path:
+        path = Path(model_path)
+        if not path.exists():
+            raise RuntimeError(f"MODEL_PATH does not exist: {path}")
+        return joblib.load(path)
+
+    # Azure ML managed online deployment.
+    azure_model_dir = os.environ.get("AZUREML_MODEL_DIR")
+    if azure_model_dir:
+        candidates = [
+            Path(azure_model_dir) / "model.joblib",
+            Path(azure_model_dir),
+        ]
+
+        for path in candidates:
+            if path.is_file():
+                return joblib.load(path)
+
+        matches = list(Path(azure_model_dir).rglob("model.joblib"))
+        if matches:
+            return joblib.load(matches[0])
+
+        raise RuntimeError(
+            f"Azure ML model directory contains no model.joblib: "
+            f"{azure_model_dir}"
+        )
+
+    # Existing MLflow registry path, retained for compatible environments.
     name = os.environ.get("MODEL_REGISTRY_NAME")
     version = os.environ.get("MODEL_VERSION")
     if name and version:
-        import mlflow.sklearn  # imported lazily so tests can run without a registry
+        import mlflow.sklearn
 
-        mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db"))
-        return mlflow.sklearn.load_model(f"models:/{name}/{version}")
+        mlflow.set_tracking_uri(
+            os.environ.get(
+                "MLFLOW_TRACKING_URI",
+                "sqlite:///mlflow.db",
+            )
+        )
+        return mlflow.sklearn.load_model(
+            f"models:/{name}/{version}"
+        )
 
-    # Fallback for local development and tests only. Submitting this is not acceptable:
-    # your deployed service must load a registered version.
-    from pathlib import Path
-
-    import joblib
-
-    path = Path(os.environ.get("MODEL_PATH", "reports/model.joblib"))
+    # Local development/tests only.
+    path = Path("reports/model.joblib")
     if not path.exists():
         raise RuntimeError(
-            "No model available. Set MODEL_REGISTRY_NAME and MODEL_VERSION, or MODEL_PATH."
+            "No model available. Set MODEL_PATH, "
+            "AZUREML_MODEL_DIR, or a compatible MLflow registry configuration."
         )
+
     return joblib.load(path)
 
 
