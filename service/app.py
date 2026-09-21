@@ -33,8 +33,6 @@ def _load_model():
     """Load once, at startup. Never per request.
 
     The deployment adapter supplies a concrete MODEL_PATH for cloud deployments.
-    Azure ML custom-model deployments mount the registered model under
-    AZUREML_MODEL_DIR.
     """
     from pathlib import Path
     import joblib
@@ -43,30 +41,24 @@ def _load_model():
     model_path = os.environ.get("MODEL_PATH")
     if model_path:
         path = Path(model_path)
+
         if not path.exists():
             raise RuntimeError(f"MODEL_PATH does not exist: {path}")
+
+        if path.is_dir():
+            candidates = [
+                path / "model.joblib",
+                *path.rglob("model.joblib"),
+            ]
+            for candidate in candidates:
+                if candidate.is_file():
+                    return joblib.load(candidate)
+
+            raise RuntimeError(
+                f"MODEL_PATH directory contains no model.joblib: {path}"
+            )
+
         return joblib.load(path)
-
-    # Azure ML managed online deployment.
-    azure_model_dir = os.environ.get("AZUREML_MODEL_DIR")
-    if azure_model_dir:
-        candidates = [
-            Path(azure_model_dir) / "model.joblib",
-            Path(azure_model_dir),
-        ]
-
-        for path in candidates:
-            if path.is_file():
-                return joblib.load(path)
-
-        matches = list(Path(azure_model_dir).rglob("model.joblib"))
-        if matches:
-            return joblib.load(matches[0])
-
-        raise RuntimeError(
-            f"Azure ML model directory contains no model.joblib: "
-            f"{azure_model_dir}"
-        )
 
     # Existing MLflow registry path, retained for compatible environments.
     name = os.environ.get("MODEL_REGISTRY_NAME")
@@ -88,8 +80,8 @@ def _load_model():
     path = Path("reports/model.joblib")
     if not path.exists():
         raise RuntimeError(
-            "No model available. Set MODEL_PATH, "
-            "AZUREML_MODEL_DIR, or a compatible MLflow registry configuration."
+            "No model available. Set MODEL_PATH or a compatible "
+            "MLflow registry configuration."
         )
 
     return joblib.load(path)

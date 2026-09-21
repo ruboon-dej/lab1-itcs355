@@ -58,6 +58,21 @@ def _parse_blob_uri(blob_uri: str) -> tuple[str, str, str]:
 
 
 class AzureAdapter(CloudAdapter):
+    def set_traffic(
+        self,
+        endpoint: str,
+        traffic: dict[str, int],
+    ) -> None:
+        """Set the traffic split for an Azure managed online endpoint."""
+        ml_client = self._ml_client()
+
+        endpoint_update = ml_client.online_endpoints.get(endpoint)
+        endpoint_update.traffic = traffic
+
+        ml_client.online_endpoints.begin_create_or_update(
+            endpoint_update
+        ).result()
+
     def register_model(
         self,
         model_uri: str,
@@ -442,7 +457,12 @@ class AzureAdapter(CloudAdapter):
             endpoint_name=endpoint,
             model=model,
             environment=environment,
+            model_mount_path="/var/azureml-model-mount",
             environment_variables={
+                "MODEL_PATH": (
+                    f"/var/azureml-model-mount/"
+                    f"{model_name}/{model_version}"
+                ),
                 "MODEL_VERSION": str(model_version),
             },
             instance_type=instance,
@@ -515,7 +535,12 @@ class AzureAdapter(CloudAdapter):
             endpoint_name=endpoint,
             model=model,
             environment=environment,
+            model_mount_path="/var/azureml-model-mount",
             environment_variables={
+                "MODEL_PATH": (
+                    f"/var/azureml-model-mount/"
+                    f"{model_name}/{model_version}"
+                ),
                 "MODEL_VERSION": str(model_version),
             },
             instance_type=instance,
@@ -549,7 +574,6 @@ class AzureAdapter(CloudAdapter):
             response = ml_client.online_endpoints.invoke(
                 endpoint_name=endpoint,
                 request_file=request_path,
-                deployment_name="blue",
             )
 
             if isinstance(response, bytes):
