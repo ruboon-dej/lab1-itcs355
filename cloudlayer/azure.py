@@ -457,10 +457,9 @@ class AzureAdapter(CloudAdapter):
             endpoint_name=endpoint,
             model=model,
             environment=environment,
-            model_mount_path="/var/azureml-model-mount",
             environment_variables={
                 "MODEL_PATH": (
-                    f"/var/azureml-model-mount/"
+                    f"/var/azureml-app/azureml-models/"
                     f"{model_name}/{model_version}"
                 ),
                 "MODEL_VERSION": str(model_version),
@@ -535,10 +534,9 @@ class AzureAdapter(CloudAdapter):
             endpoint_name=endpoint,
             model=model,
             environment=environment,
-            model_mount_path="/var/azureml-model-mount",
             environment_variables={
                 "MODEL_PATH": (
-                    f"/var/azureml-model-mount/"
+                    f"/var/azureml-app/azureml-models/"
                     f"{model_name}/{model_version}"
                 ),
                 "MODEL_VERSION": str(model_version),
