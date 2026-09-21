@@ -50,7 +50,7 @@ function samplePayload() {
   };
 }
 
-export default function () {
+function buildBody() {
   const batch = __ENV.BATCH === 'true';
   const size = Number(__ENV.BATCH_SIZE || 100);
 
@@ -61,18 +61,35 @@ export default function () {
     : JSON.stringify(samplePayload());
 
   const payloadKb = Number(__ENV.PAYLOAD_KB || 0);
-  const whitespace = payloadKb > 0
-    ? ' '.repeat(Math.max(0, payloadKb * 1024 - body.length))
-    : '';
 
-  const inflatedBody = payloadKb > 0
-    ? body.replace(/,/g, ',' + whitespace)
-    : body;
+  if (payloadKb <= 0) {
+    return body;
+  }
 
-  const res = http.post(__ENV.TARGET, inflatedBody, { headers });
+  const targetBytes = payloadKb * 1024;
 
-  latency.add(res.timings.duration);
-  failures.add(res.status !== 200);
+  if (body.length >= targetBytes) {
+    return body;
+  }
+
+  const paddingBytes = targetBytes - body.length;
+  const padding = 'x'.repeat(Math.max(0, paddingBytes));
+
+  return body.slice(0, -1) + `,"padding":"${padding}"}`;
+}
+
+export default function () {
+  const body = buildBody();
+
+  const res = http.post(__ENV.TARGET, body, { headers });
+
+  const success = res.status === 200;
+
+  if (success) {
+    latency.add(res.timings.duration);
+  }
+
+  failures.add(!success);
 
   check(res, {
     'status is 200': (r) => r.status === 200,
