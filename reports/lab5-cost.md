@@ -1,55 +1,85 @@
 # Lab 5 — Cost report
 
-Provider `azure` · instance `Standard_DS2_v2` · 11.20 THB/hour
+Provider `azure` · reference instance `Standard_DS2_v2` · 11.20 THB/hour
 
-## 1. Estimate, made before running
+> Note: This file is retained as a supporting cost-report artifact from the supplied project material. The billing values below are not used as evidence for the Lab 3 Container Apps serving-cost calculation.
+
+## 1. Reference estimate
+
 25.00 THB
 
-## 2. Actual, from billing filtered by tag
+This is the estimate recorded by the supplied cost-report scaffold.
+
+## 2. Billing value in the supplied scaffold
+
 22.00 THB
 
-## 3. The gap
+This value is retained from the supplied project material but is **not** treated as verified Lab 3 Container Apps billing.
+
+## 3. Difference recorded by the scaffold
+
 -3.00 THB (-12.0%)
 
-TODO(Lab 5): explain it. There is always a gap. The usual causes: the meter ran while you
-debugged a broken job; storage and egress were left out of the estimate; the endpoint
-stayed warm overnight; the instance was larger than planned. Name yours.
+Because the supplied billing values are not being used as evidence for the final Lab 3 Container Apps deployment, this difference is not interpreted as an actual Lab 3 billing gap.
 
-## 4. Breakdown by component
+## 4. Component breakdown
+
 | Component | THB | Notes |
-|---|---|---|
-| Training | | |
-| Storage | | |
-| Serving | | |
-| Pipeline | | |
-| Monitoring | | |
+|---|---:|---|
+| Training | — | Not separately verified for the final Lab 3 cost analysis |
+| Storage | — | Not separately verified |
+| Serving | — | Not separately verified as Container Apps billing |
+| Pipeline | — | Not separately verified |
+| Monitoring | — | Not separately verified |
 
-TODO(Lab 5): fill from billing, split by tag.
+No component-level Azure billing breakdown was available that could be reliably attributed to the final Lab 3 Container Apps deployment.
 
-## 5. Cost per 1,000 predictions
-Measured throughput: 58.3 req/s
+## 5. Lab 3 serving-cost sensitivity analysis
 
-| Utilisation | THB per 1,000 |
-|---|---|
-| 5% | 1.0663 |
-| 25% | 0.2133 |
-| 80% | 0.0666 |
+The Lab 3 report uses the following reference pricing model:
 
-Utilisation is the most fragile number here, which is why three are reported rather than
-one. State which you believe and why.
+```text
+cost = hourly_rate × (1000 / (throughput × utilisation)) / 3600
+```
 
-Below roughly **0.0030 req/s**, scheduled batch inference is cheaper than keeping
-this endpoint warm. TODO(Lab 5): check that against your actual request rate. The answer
-is usually lower than students expect.
+Reference hourly rate:
 
-## 6. One optimisation you applied
-| | Before | After |
-|---|---|---|
-| Configuration | | |
-| THB per 1,000 | | |
-| Latency p95 | | |
+```text
+11.1955 THB/hour
+```
 
-TODO(Lab 5): candidates — right-size the instance, move to a scale-to-zero service, batch
-where latency allows, cache repeated inputs, use spot for training, shorten log retention.
-Report the latency cost as well as the money saved. An optimisation that halves cost and
-triples p99 is a trade, not a win.
+The later authenticated 1-VU load test measured approximately:
+
+```text
+6.08 requests/s
+```
+
+Using that measured throughput with the reference hourly rate gives the following illustrative sensitivity analysis:
+
+| Utilisation | THB / 1,000 requests |
+| ----------: | -------------------: |
+|          5% |                10.23 |
+|         25% |                 2.05 |
+|         80% |                 0.64 |
+
+These values are estimates only. They should not be interpreted as actual Azure Container Apps charges because the hourly rate is based on the project's `Standard_DS2_v2` reference pricing rather than a verified Container Apps billing meter.
+
+The Container Apps deployment is intended to support scale-to-zero. Consequently, actual serving cost depends on how long the application is actively running and the actual Container Apps billing model, rather than simply assuming a continuously running DS2_v2 instance.
+
+## 6. Cost interpretation
+
+The most important limitation of this calculation is that the project does not have a verified Container Apps billing breakdown for the final Lab 3 deployment.
+
+Therefore:
+
+* the `6.08 req/s` value is a real measured load-test result;
+* `11.1955 THB/hour` is a reference pricing assumption;
+* the three THB-per-1,000 values are sensitivity estimates;
+* the `25 THB` and `22 THB` values above are retained from the supplied scaffold but are not claimed as verified Lab 3 Container Apps billing.
+
+This keeps the cost analysis reproducible without presenting unverified billing data as actual deployment cost.
+
+```
+
+**This is the safer version for submission.** It keeps the existing cost artifact, but makes it crystal clear that the `25/22 THB` numbers aren't being passed off as actual Lab 3 Container Apps billing.
+```
