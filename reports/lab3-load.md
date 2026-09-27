@@ -2,17 +2,17 @@
 
 ## 1. Serving configuration
 
-- Provider: Azure Container Apps
-- Region: Japan East
-- Endpoint: `itcs355-itcs355-6688022-predict`
-- Serving image: `itcs355-serve:05c7001`
-- Production model: container registry `itcs3556688022.azurecr.io`, model version `2`
-- Serving instance configuration: `Standard_DS2_v2`
-- Model version is returned in every prediction response and `X-Model-Version` response header.
-- `/health` is the liveness route.
-- `/ready` checks model readiness.
-- `/predict` is the single-prediction scoring route.
-- `/predict/batch` is the batch-prediction scoring route.
+* Provider: Azure Container Apps
+* Region: Japan East
+* Endpoint: `itcs355-itcs355-6688022-predict`
+* Serving image: `itcs355-serve:05c7001`
+* Production model: container registry `itcs3556688022.azurecr.io`, model version `2`
+* Serving instance configuration: `Standard_DS2_v2`
+* Model version is returned in every prediction response and `X-Model-Version` response header.
+* `/health` is the liveness route.
+* `/ready` checks model readiness.
+* `/predict` is the single-prediction scoring route.
+* `/predict/batch` is the batch-prediction scoring route.
 
 Because the Azure for Students subscription is subject to Azure ML managed-online-endpoint quota limitations, the final Lab 3 deployment uses Azure Container Apps rather than an Azure ML managed online endpoint. This avoids relying on Azure ML managed online endpoint quota and supports the intended scale-to-zero deployment model.
 
@@ -53,7 +53,9 @@ The 3- and 5-VU results should be interpreted carefully because provider-side tr
 
 ## 3. Batch inference
 
-A 100-row batch was tested using the same serving configuration.
+The following batch results were obtained from the supplied project material **before the final Azure Container Apps deployment**.
+
+They are retained as historical batch-inference evidence and are **not presented as a current Container Apps measurement**.
 
 * Batch size: 100
 * Batch requests: 357
@@ -65,15 +67,17 @@ A 100-row batch was tested using the same serving configuration.
 * Batch p99: 461.0 ms
 * Batch errors: 0%
 
-Batching therefore processed approximately **80 times more predictions per second** than the single-prediction 1-VU measurement.
+The historical batch measurement processed approximately **80 times more predictions per second** than the historical single-prediction 1-VU measurement.
 
-The trade-off is that the latency of an individual batch request was higher than the pre-declared 200 ms p95 target.
+Because these measurements were not rerun against the final Container Apps deployment, they should not be used as the current Container Apps performance baseline.
 
-This demonstrates that batching can substantially improve prediction throughput when the application can tolerate batch latency.
+The historical results nevertheless illustrate the throughput/latency trade-off of batching: batching can substantially increase prediction throughput when the application can tolerate higher individual request latency.
 
 ## 4. Payload-size experiment
 
-At 1 VU, the prediction payload was inflated with legal JSON padding while keeping the prediction features unchanged.
+The following payload-size measurements were also obtained from the supplied project material **before the final Azure Container Apps deployment**.
+
+They are retained as historical payload-size evidence and are **not presented as current Container Apps measurements**.
 
 | Payload | Requests | p50 (ms) | p95 (ms) | p99 (ms) | Error rate | Throughput (req/s) |
 | ------: | -------: | -------: | -------: | -------: | ---------: | -----------------: |
@@ -82,13 +86,11 @@ At 1 VU, the prediction payload was inflated with legal JSON padding while keepi
 |  100 KB |       53 |    941.4 |  2,029.3 |  2,349.3 |         0% |               0.88 |
 |  500 KB |       87 |    521.9 |  1,384.1 |  1,578.7 |         0% |               1.43 |
 
-The 1 KB payload met the p95 target.
+The historical results showed that larger request payloads were associated with substantial latency and throughput degradation despite zero HTTP errors.
 
-At 10 KB, p95 slightly exceeded the target.
+The 1 KB historical payload met the p95 target, while the 10 KB payload slightly exceeded it. The 100 KB and 500 KB payloads produced substantially higher latency.
 
-The 100 KB and 500 KB payloads caused substantial latency and throughput degradation despite zero HTTP errors.
-
-This indicates that unnecessarily large request payloads can become a significant serving bottleneck even when the application continues returning successful predictions.
+Because these measurements were not rerun against the final Container Apps deployment, they are retained only as historical experimental evidence and are not used as the current Container Apps latency baseline.
 
 ## 5. Instance-size experiment
 
@@ -128,26 +130,9 @@ ExpressEnvironmentFeatureNotSupported
 
 The deployment adapter therefore could not establish the required Container Apps revision/registry configuration needed for the intended concurrent canary workflow.
 
-The deployment logs also showed:
+The deployment process also showed that the expected registry configuration did not persist after the update operation and required additional configuration attempts.
 
-```text
-[attempt 1] generic --set update exit 0
-ACR registry auth attempt 1 didn't stick (registries still not wired) -- retrying...
-```
-
-The same registry-wiring condition occurred on the second attempt:
-
-```text
-ACR registry auth attempt 2 didn't stick (registries still not wired) -- retrying...
-```
-
-Although the CLI update command returned exit code 0, the expected registry/revision configuration was not actually present afterward. The adapter therefore retried the configuration rather than treating the operation as successfully established.
-
-This prevented the required concurrent 90/10 revision traffic split from being established reliably in the final Container Apps environment.
-
-This is an Azure Container Apps environment/platform limitation rather than a failure of the FastAPI application or the model itself.
-
-Therefore, this report does **not** claim that a genuine concurrent 90/10 canary was successfully implemented.
+Because the final environment did not establish the required revision/traffic configuration, this report does **not** claim that a genuine concurrent 90/10 canary was successfully implemented.
 
 The rollback mechanism itself was implemented so that, when multiple revisions are available, traffic can be returned to the production revision using the Container Apps traffic-routing interface.
 
@@ -238,9 +223,11 @@ All three returned successful responses during the local container test.
 
 The Lab 3 implementation demonstrates the serving workflow using a provider-independent FastAPI service deployed through Azure Container Apps, including model loading, health and readiness checks, single and batch inference, percentile-based load testing, payload-size testing, rollback support, cost estimation, and teardown.
 
-The load tests showed that the pre-declared p95 target of 200 ms was not met even at the lowest tested concurrency, while reliability degraded beyond approximately 2 VUs. The experiments also showed that batching can dramatically increase prediction throughput, while large request payloads can substantially increase latency.
+The current authenticated load tests showed that the pre-declared p95 target of 200 ms was not met even at the lowest tested concurrency, while reliability degraded beyond approximately 2 VUs.
 
-The intended concurrent 90/10 canary traffic experiment could not be completed in the final Azure Container Apps environment because the required revision/traffic configuration was not supported by the Container Apps environment. The deployment logs recorded the relevant platform limitation as `ExpressEnvironmentFeatureNotSupported` and showed that the expected registry/revision wiring did not persist after the traffic/update operation.
+The historical batch and payload-size experiments are retained as supporting evidence from the supplied project material, but they are explicitly identified as measurements obtained before the final Container Apps deployment and are not presented as current Container Apps measurements.
+
+The intended concurrent 90/10 canary traffic experiment could not be completed in the final Azure Container Apps environment because the required revision/traffic configuration was not supported by the Container Apps environment. The deployment logs recorded the relevant platform limitation as `ExpressEnvironmentFeatureNotSupported`.
 
 This limitation is documented explicitly rather than presenting an unsupported 90/10 traffic split as successful evidence.
 
@@ -248,9 +235,4 @@ The final automated validation passes with:
 
 ```text
 34 passed, 1 warning
-```
-
-```
-
-This version also keeps the **load-test evidence**, **canary limitation**, and **cost assumptions** internally consistent with the `lab3-report.md` and `lab5-cost.md` versions we just settled on.
 ```
