@@ -20,6 +20,9 @@ PRICE_TABLE: dict[str, dict[str, float]] = {
         "ml.g4dn.xlarge": 26.0,
     },
     "azure": {
+        # Standard_DS2_v2 Japan East: $0.336/hour.
+        # Converted to THB using ~33.32 THB/USD on 2026-09-21.
+        "Standard_DS2_v2": 11.1955,
         "Standard_DS3_v2": 8.1,
         "Standard_F4s_v2": 6.9,
         "Standard_NC4as_T4_v3": 24.5,

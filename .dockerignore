@@ -5,6 +5,8 @@ mlruns/
 mlartifacts/
 mlflow.db
 reports/
+!reports/deploy-model/
+!reports/deploy-model/**
 notebooks/
 __pycache__/
 *.pyc

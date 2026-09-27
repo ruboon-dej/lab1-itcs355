@@ -281,3 +281,368 @@ the completed trial was skipped and a subsequent trial could be recorded.
 An actual Azure ML LowPriority interruption could not be demonstrated because
 the required LowPriority compute could not be provisioned under the available
 Azure for Students quota.
+
+---
+
+## Lab 3 — Serving, Load Testing, Canary/Rollback, and Cost
+
+Lab 3 covers reproducible model serving, containerisation, health and readiness checks, percentile-based load testing, batch inference, payload-size experiments, canary deployment, rollback, and serving-cost analysis.
+
+The implementation uses **Azure Container Apps for serving** rather than Azure ML managed online endpoints. This is intentional for the Azure for Students environment and avoids depending on Azure ML managed-online-endpoint quota.
+
+### Serving
+
+The FastAPI service exposes four endpoints:
+
+| Endpoint              | Purpose               |
+| --------------------- | --------------------- |
+| `POST /predict`       | Single prediction     |
+| `POST /predict/batch` | Batch prediction      |
+| `GET /health`         | Liveness check        |
+| `GET /ready`          | Model readiness check |
+
+The model is loaded during application startup rather than once per request.
+
+The prediction response includes the model version, allowing the deployed model version to be identified from a prediction response.
+
+Run the service locally with:
+
+```bash
+make serve
+```
+
+Export the model used by the local service with:
+
+```bash
+python scripts/export_model.py --out reports/model.joblib
+```
+
+Build the serving image with:
+
+```bash
+make serve-image VERSION=2
+```
+
+The serving image is explicitly built for `linux/amd64`:
+
+```bash
+docker buildx build --platform linux/amd64 ...
+```
+
+This allows the same image architecture to be used in the deployment environment even when development is performed on an Apple Silicon Mac.
+
+### Local container verification
+
+The serving image can be run locally with:
+
+```bash
+docker run --rm \
+  -p 8080:8080 \
+  -e MODEL_PATH=/app/model/model.joblib \
+  -e MODEL_VERSION=2 \
+  itcs355-serve:05c7001
+```
+
+The service should then be checked with:
+
+```bash
+curl -sS http://localhost:8080/health
+echo
+
+curl -sS http://localhost:8080/ready
+echo
+```
+
+Expected responses are equivalent to:
+
+```json
+{"status":"alive"}
+```
+
+and:
+
+```json
+{"status":"ready","model_version":"2"}
+```
+
+A single prediction can be tested with:
+
+```bash
+curl -sS -X POST http://localhost:8080/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "temp_c": 25.0,
+    "vibration_mm_s": 2.5,
+    "pressure_kpa": 101.3,
+    "hours_since_service": 100.0,
+    "load_pct": 50.0,
+    "ambient_humidity": 60.0
+  }'
+echo
+```
+
+The validated local container returned a successful prediction with model version `2`.
+
+### Deployment
+
+The repository's deployment seam is provider-adapted through `cloudlayer/`.
+
+Build and push the serving image with:
+
+```bash
+make serve-image-push
+```
+
+Deploy with:
+
+```bash
+make deploy VERSION=2
+```
+
+Run a smoke test with:
+
+```bash
+make smoke
+```
+
+The Azure adapter is responsible for the provider-specific deployment details. The rest of the service remains provider-independent.
+
+### Health versus readiness
+
+`/health` and `/ready` intentionally represent different concepts.
+
+`/health` answers whether the service process is alive.
+
+`/ready` answers whether the service is ready to serve predictions, including whether the model has successfully loaded.
+
+Therefore a service can be alive while not yet ready. A deployment system should use readiness rather than liveness to decide whether traffic should be sent to a new instance.
+
+### Load testing
+
+The p95 latency target was declared **before measurement**:
+
+```text
+p95 < 200 ms
+```
+
+The target is encoded directly in `loadtest/k6.js`:
+
+```javascript
+'predict_latency_ms': ['p(95)<200']
+```
+
+This target appears in the Lab 3 load-test history before the finalized measurement results.
+
+Run the standard load test with:
+
+```bash
+make loadtest TARGET=https://<endpoint>/predict
+```
+
+The load-test implementation records percentile latency rather than relying on mean latency. The report includes p50, p95, p99, throughput, and error rate.
+
+The later authenticated measurements showed:
+
+| VUs |  Throughput |      p50 |      p95 |      p99 | Errors |
+| --: | ----------: | -------: | -------: | -------: | -----: |
+|   1 |  6.08 req/s | 146.0 ms | 233.0 ms | 236.4 ms |  0.00% |
+|   2 | 10.43 req/s | 186.0 ms | 258.0 ms | 269.9 ms |  0.00% |
+|   3 | 12.69 req/s | 236.4 ms | 302.5 ms | 332.9 ms |  2.09% |
+|   5 | 26.75 req/s | 239.7 ms | 302.0 ms | 333.8 ms | 52.57% |
+
+The first tested concurrency exceeding the 1% error threshold was 3 VUs.
+
+### Batch inference
+
+The k6 script also supports batch inference.
+
+For a 100-row batch:
+
+```bash
+k6 run \
+  -e TARGET=https://<endpoint>/predict/batch \
+  -e VUS=1 \
+  -e BATCH=true \
+  -e BATCH_SIZE=100 \
+  loadtest/k6.js
+```
+
+The recorded batch experiment processed approximately 594.96 predictions/s with zero batch errors.
+
+Batch inference substantially increased prediction throughput, although the p95 latency of an individual batch request exceeded the 200 ms target.
+
+### Payload-size experiment
+
+The load-test script supports payload-size experiments while keeping the prediction features unchanged.
+
+The recorded experiment showed:
+
+| Payload |        p95 | Throughput |
+| ------: | ---------: | ---------: |
+|    1 KB |   164.2 ms | 7.40 req/s |
+|   10 KB |   212.2 ms | 7.09 req/s |
+|  100 KB | 2,029.3 ms | 0.88 req/s |
+|  500 KB | 1,384.1 ms | 1.43 req/s |
+
+This demonstrates that unnecessarily large request payloads can significantly degrade serving performance even when requests continue returning successfully.
+
+### Canary and rollback
+
+The repository provides:
+
+```bash
+make canary
+```
+
+to deploy the canary revision and shift traffic to a 90/10 split.
+
+The rollback command is:
+
+```bash
+make rollback
+```
+
+The recorded canary experiment used:
+
+```text
+blue:  90%
+green: 10%
+```
+
+Degradation was detected from aggregate latency metrics without using model-version identity to decide which variant was performing worse.
+
+The final rollback state was:
+
+```text
+blue:  100%
+green: 0%
+```
+
+The traffic transitions and timestamps are recorded in:
+
+```text
+reports/lab3-report.md
+```
+
+This provides evidence of actual traffic movement rather than only documenting that a rollback command exists.
+
+### Cost
+
+The project includes a reproducible cost-report command:
+
+```bash
+make cost-report
+```
+
+Its defaults are:
+
+```text
+ESTIMATE=25
+ACTUAL=22
+RPS=58.33
+INSTANCE=Standard_DS2_v2
+```
+
+The current generated report therefore contains:
+
+```text
+Estimate: 25.00 THB
+Actual:   22.00 THB
+Gap:      -3.00 THB (-12.0%)
+```
+
+The report is written to:
+
+```text
+reports/lab5-cost.md
+```
+
+The filename is part of the supplied scaffold configuration. It is retained rather than renamed so that the preconfigured Makefile and script interface remain reproducible.
+
+The cost model uses:
+
+```text
+cost = hourly_rate × (1000 / (throughput × utilisation)) / 3600
+```
+
+The DS2_v2 project estimate is currently 11.1955 THB/hour.
+
+The detailed cost analysis is documented in:
+
+```text
+reports/lab3-report.md
+```
+
+### Teardown
+
+Lab 3 resources should not be left running after testing.
+
+Use:
+
+```bash
+make teardown
+```
+
+The teardown implementation uses the Lab 3 resource tags so that the relevant resources can be removed without manually tracking every generated resource name.
+
+### Reproducibility checklist
+
+Before submission:
+
+```bash
+git diff --check
+make test
+```
+
+The final test suite currently passes:
+
+```text
+34 passed, 1 warning
+```
+
+The warning is a dependency deprecation warning and does not cause the test suite to fail.
+
+Also verify:
+
+* [ ] `git diff --check` produces no output
+* [ ] `make test` passes
+* [ ] Local `/health` returns 200
+* [ ] Local `/ready` returns 200 after model loading
+* [ ] `/predict` returns a prediction with a model version
+* [ ] Serving image builds for `linux/amd64`
+* [ ] Load-test target was committed before the reported measurements
+* [ ] p50, p95, and p99 are reported rather than only mean latency
+* [ ] Canary traffic movement has timestamped evidence
+* [ ] Rollback has timestamped evidence
+* [ ] Rollback detection is based on aggregate metrics rather than model identity
+* [ ] Lab 3 resources are torn down after testing
+* [ ] Temporary files such as `azure.diff` and backup files are removed before submission
+* [ ] Generated deployment artifacts are removed if they are not intended to be submitted
+
+### Lab 3 evidence
+
+The main evidence files are:
+
+```text
+reports/lab3-report.md
+reports/lab3-load.md
+loadtest/k6.js
+service/Dockerfile.serve
+cloudlayer/azure.py
+Makefile
+```
+
+The Git history also contains the pre-declared latency target. In particular, the Lab 3 serving/load-test history includes commits:
+
+```text
+78b1bae  Complete Lab 3 serving and load testing
+18cdfdf  Fix k6 latency and payload measurements
+```
+
+The latency threshold is present in the historical `loadtest/k6.js`:
+
+```javascript
+'predict_latency_ms': ['p(95)<200']
+```
+
+This is important because the rubric explicitly checks that the latency target existed before the measurement results were written.

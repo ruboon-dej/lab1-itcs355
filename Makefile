@@ -6,13 +6,25 @@ IMAGE ?= itcs355-lab1
 TAG   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 PLATFORM ?= linux/amd64
 SEED ?= 20260101
+VERSION ?= 2
+CANARY_VERSION ?= 3
+
+# Lab 3/5 reproducibility defaults
+EST ?= 25
+ACT ?= 22
+RPS ?= 58.33
+INSTANCE ?= Standard_DS2_v2
 .DEFAULT_GOAL := help
 
 .PHONY: help setup cloud-check data test portability-audit train image image-push reproduce verify clean teardown \
-        tune tune-local compare reload-check serve serve-image loadtest drift inject-drift pipeline cost cost-report swap-check llm-eval llm-gate
+        tune tune-local compare reload-check serve serve-image serve-image-push deploy smoke loadtest drift inject-drift pipeline cost cost-report swap-check llm-eval llm-gate canary rollback
 
 cost:
-	python scripts/cost_report.py --estimate $(EST) --actual $(ACT) --rps $(RPS) --instance $(INSTANCE)
+	@test -n "$(EST)" || (echo "ERROR: set EST, e.g. EST=25"; exit 1)
+	@test -n "$(ACT)" || (echo "ERROR: set ACT, e.g. ACT=22"; exit 1)
+	@test -n "$(RPS)" || (echo "ERROR: set RPS, e.g. RPS=58.33"; exit 1)
+	@test -n "$(INSTANCE)" || (echo "ERROR: set INSTANCE, e.g. INSTANCE=Standard_DS2_v2"; exit 1)
+	python scripts/cost_report.py --estimate "$(EST)" --actual "$(ACT)" --rps "$(RPS)" --instance "$(INSTANCE)"
 
 cost-report: cost
 
@@ -60,10 +72,10 @@ verify: ## Check the produced metric against the README claim
 
 teardown: ## Delete every resource tagged course=itcs355 for this lab
 	python -c "from src import config; from cloudlayer.factory import get_adapter; \
-	cfg=config.load(); print(get_adapter(cfg).teardown(cfg.tags(2)))"
+	cfg=config.load(); print(get_adapter(cfg).teardown(cfg.tags(3)))"
 
 clean: ## Remove local artifacts
-	rm -rf mlruns mlartifacts mlflow.db reports/metrics.json .pytest_cache
+	rm -rf mlruns mlartifacts mlflow.db reports/metrics.json reports/deploy-model
 
 # --- Lab 2 -------------------------------------------------------------------
 tune: ## Budgeted hyperparameter study on managed compute
@@ -87,13 +99,39 @@ serve: ## Run the inference service locally on :8080
 	MODEL_PATH=reports/model.joblib MODEL_VERSION=local uvicorn service.app:app --port 8080
 
 serve-image: ## Build the serving image
-	docker buildx build --platform $(PLATFORM) -f service/Dockerfile.serve -t itcs355-serve:$(TAG) --load .
+	az ml model download \
+		--name $(MODEL_REGISTRY_NAME) \
+		--version $(VERSION) \
+		--resource-group $${AZURE_RESOURCE_GROUP} \
+		--workspace-name $${AZURE_ML_WORKSPACE} \
+		--download-path reports/deploy-model
+	cp reports/deploy-model/$(MODEL_REGISTRY_NAME)/model.joblib reports/deploy-model/model.joblib
+	docker buildx build \
+		--platform $(PLATFORM) \
+		-f service/Dockerfile.serve \
+		-t itcs355-serve:$(TAG) \
+		--load .
 
-loadtest: ## Load test at three concurrency levels
+serve-image-push: serve-image ## Build and push the serving image to Azure Container Registry
+	SERVE_IMAGE_TAG=$(TAG) python -c "from src.config import load; from cloudlayer.factory import get_adapter; cfg=load(); print(get_adapter(cfg).push_image('itcs355-serve:$(TAG)'))"
+
+deploy: serve-image-push ## Deploy the registered model to Azure Container Apps
+	SERVE_IMAGE_TAG=$(TAG) python -c "from src.config import load; from cloudlayer.factory import get_adapter; import os; cfg=load(); adapter=get_adapter(cfg); endpoint=os.environ.get('ENDPOINT_NAME', f'itcs355-{cfg.project_id}-predict'); print(adapter.deploy(f'{cfg.model_registry_name}:$(VERSION)', endpoint, 'Standard_DS2_v2'))"
+
+smoke: ## Invoke the deployed endpoint once
+	python -c "from src.config import load; from cloudlayer.factory import get_adapter; import os; cfg=load(); adapter=get_adapter(cfg); endpoint=os.environ.get('ENDPOINT_NAME', f'itcs355-{cfg.project_id}-predict'); payload={'temp_c':70.0,'vibration_mm_s':5.0,'pressure_kpa':100.0,'hours_since_service':1000.0,'load_pct':50.0,'ambient_humidity':50.0}; print(adapter.invoke(endpoint, payload))"
+
+loadtest: ## Load test at multiple concurrency levels
 	@for vus in 1 10 50; do \
-	  echo "=== $$vus VUs ==="; \
-	  k6 run -e TARGET=$(TARGET) -e VUS=$$vus loadtest/k6.js || true; \
+		echo "=== $$vus VUs ==="; \
+		k6 run -e TARGET=$(TARGET) -e VUS=$$vus loadtest/k6.js || true; \
 	done
+
+canary: ## Deploy canary revision and shift traffic 90/10
+	SERVE_IMAGE_TAG=$(TAG) python scripts/canary_roll.py canary --version $(CANARY_VERSION)
+
+rollback: ## Roll back traffic to the production revision
+	python scripts/canary_roll.py rollback
 
 # --- Lab 4 -------------------------------------------------------------------
 inject-drift: ## Shift a feature's distribution on purpose
