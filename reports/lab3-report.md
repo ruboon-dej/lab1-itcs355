@@ -1,79 +1,315 @@
-# Lab 3 — Serving, Load Testing, Canary/Rollback, and Cost
+# ITCS355 Lab 3 — Serving, Load Testing, Canary/Rollback, and Cost
 
-## 1. Service validation
+## 1. Serving
 
-The FastAPI service provides `/predict`, `/predict/batch`, `/health`, and `/ready`. The model is loaded once during application startup, and responses include the deployed model version. Structured request logging records request ID, latency, and model version.
+The Lab 3 inference service is implemented with FastAPI and exposes four routes:
 
-Final test result: `34 passed, 1 warning`.
+- `POST /predict` — single prediction
+- `POST /predict/batch` — batch prediction
+- `GET /health` — liveness check
+- `GET /ready` — readiness check
 
-## 2. Load testing
+The model is loaded during application startup rather than once for every request. The model version is returned in prediction responses and is also included in the service response headers.
 
-The k6 test used a pre-declared p95 latency target of less than 200 ms.
+Because the Azure for Students subscription is subject to Azure ML managed-online-endpoint quota limitations, the Lab 3 deployment uses **Azure Container Apps** rather than Azure ML managed online endpoints. The Container Apps deployment is intended to support scale-to-zero and avoid consuming Azure ML managed endpoint quota.
 
-| VUs | Throughput | p50 | p95 | Errors |
-|---:|---:|---:|---:|---:|
-| 1 | 7.48 req/s | 126.4 ms | 163.8 ms | 0% |
-| 10 | 54.08 req/s | 147.6 ms | 292.5 ms | 74.7% |
-| 50 | 303.94 req/s | 136.8 ms | 263.4 ms | 96.19% |
+The serving image is built for `linux/amd64` so that it can run consistently in the cloud deployment environment.
 
-## 3. Batch, payload, and instance findings
+The production model used for the serving deployment is:
 
-A batch of 100 processed approximately 594.96 predictions/s with zero errors. Batch p95 was 265.8 ms.
+- Container registry: `itcs3556688022.azurecr.io`
+- Model version: `2`
+- Serving instance configuration: `Standard_DS2_v2`
 
-Payload testing showed increasing latency:
+The local serving container was successfully started with:
 
-| Payload | p50 | p95 | p99 | Errors |
-|---:|---:|---:|---:|---:|
-| 1 KB | 124.6 ms | 164.2 ms | 220.2 ms | 0% |
-| 10 KB | 129.8 ms | 212.2 ms | 266.9 ms | 0% |
-| 100 KB | 941.4 ms | 2029.3 ms | 2349.3 ms | 0% |
-| 500 KB | 521.9 ms | 1384.1 ms | 1578.7 ms | 0% |
+```bash
+docker run --rm \
+  -p 8080:8080 \
+  -e MODEL_PATH=/app/model/model.joblib \
+  -e MODEL_VERSION=2 \
+  itcs355-serve:05c7001
+```
 
-Instance-size results:
+The container reported successful model loading:
 
-| Instance | Throughput | p50 | p95 | p99 | Errors |
-|---|---:|---:|---:|---:|---:|
-| DS1_v2 | 7.48 req/s | 126.4 ms | 163.8 ms | 194.5 ms | 0% |
-| DS2_v2 | 6.67 req/s | 131.7 ms | 215.5 ms | 341.0 ms | 0% |
+```text
+model loaded, version=2
+```
 
-The DS2_v2 measurement did not improve the observed performance.
+The health and readiness endpoints returned:
 
-## 4. Canary and rollback
+```json
+{"status":"alive"}
+```
 
-The production model was version 2 and the canary was version 3. Traffic was initially split 90/10.
+and:
 
-Using aggregate metrics without relying on model-version identity, baseline p95 was 163.8 ms and the blinded canary measurement produced p95 of 271.0 ms with 0% errors. This was an increase of approximately 107.2 ms and crossed the pre-declared 200 ms target.
+```json
+{"status":"ready","model_version":"2"}
+```
 
-Canary traffic was recorded at 90/10 at `2026-09-21T06:26:33Z`. Detection took approximately 60 seconds based on the 60-second observation window. Rollback began at `2026-09-21T06:30:03Z`. Final Azure verification showed `blue=100`, `green=0`.
+A real prediction was also successfully executed:
 
-A shorter monitoring window or continuous p95 alerting could reduce detection time. A 50/50 split would expose twice as much traffic to the canary compared with 90/10; the exact metric effect would require measurement.
+```json
+{"probability":0.03348807896248448,"model_version":"2"}
+```
 
-## 5. Cost per 1,000 predictions
+The corresponding service log recorded the `/predict` request as HTTP 200 with approximately 66 ms latency.
 
-Measured Standard_DS2_v2 throughput: 6.671472 predictions/s.
+The Docker image produced a platform warning when executed directly on the Apple Silicon development machine because the image targets `linux/amd64`. This is expected for the intended cloud deployment platform. The image was deliberately built using:
 
-Formula:
+```bash
+docker buildx build --platform linux/amd64
+```
 
-`hourly_rate × (1000 / (throughput × utilisation)) / 3600`
+The Container Apps deployment was successfully exercised and the serving workflow was validated independently from the Azure ML managed-online-endpoint path.
 
-The DS2_v2 rate used was 11.1955 THB/hour. This is a pricing-based estimate, not an Azure billing statement.
+## 2. Latency target and concurrency
 
-| Utilisation | THB / 1,000 predictions |
-|---:|---:|
-| 5% | 9.3229 |
-| 25% | 1.8646 |
-| 80% | 0.5827 |
+The p95 latency target was declared **before measurement** in `loadtest/k6.js`:
 
-Using the project's batch-cost assumption of one scheduled batch run per day at 50% of one endpoint-hour, the break-even point is approximately 0.003045 req/s, or 263 requests/day.
+```text
+p95 < 200 ms
+```
 
-## 6. Teardown
+The k6 script contains the explicit threshold:
 
-The Azure ML online endpoint was explicitly deleted after testing. A subsequent Azure CLI lookup returned `ResourceNotFound`, confirming that the endpoint no longer exists.
+```javascript
+'predict_latency_ms': ['p(95)<200']
+```
 
-## 7. Validation
+The measurements use percentile latency rather than mean latency because tail latency is important for serving reliability.
 
-Final project validation:
+The authenticated load-test series produced the following results:
 
-`34 passed, 1 warning`
+| VUs | Requests | Throughput (req/s) | p50 (ms) | p95 (ms) | p99 (ms) | Error rate |
+| --: | -------: | -----------------: | -------: | -------: | -------: | ---------: |
+|   1 |      365 |               6.08 |    146.0 |    233.0 |    236.4 |      0.00% |
+|   2 |      627 |              10.43 |    186.0 |    258.0 |    269.9 |      0.00% |
+|   3 |      765 |              12.69 |    236.4 |    302.5 |    332.9 |      2.09% |
+|   5 |    1,611 |              26.75 |    239.7 |    302.0 |    333.8 |     52.57% |
 
-Python compilation of `cloudlayer/azure.py` also completed successfully.
+At 1 and 2 VUs there were no failed requests, although neither configuration met the pre-declared p95 target.
+
+At 3 VUs the error rate exceeded the pre-declared 1% failure threshold. The 5-VU run produced substantial failures, including Azure HTTP/2 `INTERNAL_ERROR` responses.
+
+Therefore, the first tested concurrency exceeding the 1% error threshold was **3 VUs**. The observed reliable operating range is between 2 and 3 VUs, with the observed breaking point between those tested levels.
+
+The higher-load results should be interpreted carefully because provider-side transport errors occurred at 3 and 5 VUs.
+
+## 3. Batch inference
+
+A 100-row batch was tested using the same serving configuration.
+
+Results:
+
+* Batch size: 100
+* Batch requests: 357
+* Predictions processed: 35,700
+* Batch request throughput: 5.9496 batches/s
+* Prediction throughput: approximately 594.96 predictions/s
+* Batch p50: 140.8 ms
+* Batch p95: 265.8 ms
+* Batch p99: 461.0 ms
+* Batch errors: 0%
+
+The batch endpoint therefore processed approximately **80 times more predictions per second** than the single-prediction 1-VU measurement.
+
+The trade-off is that the latency of an individual batch request was higher than the pre-declared 200 ms p95 target.
+
+This demonstrates that batching can substantially improve prediction throughput when the application can tolerate batch latency.
+
+## 4. Payload-size experiment
+
+At 1 VU, the prediction payload was inflated with legal JSON padding while keeping the prediction features unchanged.
+
+| Payload | Requests | p50 (ms) | p95 (ms) | p99 (ms) | Error rate | Throughput (req/s) |
+| ------: | -------: | -------: | -------: | -------: | ---------: | -----------------: |
+|    1 KB |      444 |    124.6 |    164.2 |    220.2 |         0% |               7.40 |
+|   10 KB |      426 |    129.8 |    212.2 |    266.9 |         0% |               7.09 |
+|  100 KB |       53 |    941.4 |  2,029.3 |  2,349.3 |         0% |               0.88 |
+|  500 KB |       87 |    521.9 |  1,384.1 |  1,578.7 |         0% |               1.43 |
+
+The 1 KB payload met the p95 target.
+
+At 10 KB, p95 slightly exceeded the target.
+
+The 100 KB and 500 KB payloads caused substantial latency and throughput degradation despite having zero HTTP errors.
+
+This indicates that unnecessarily large request payloads can become a significant serving bottleneck even when the application itself continues returning successful predictions.
+
+## 5. Instance-size experiment
+
+The serving configuration uses `Standard_DS2_v2`.
+
+A previous 1-VU experiment compared two instance sizes:
+
+| Instance | Throughput (req/s) | p50 (ms) | p95 (ms) | p99 (ms) | Errors |
+| -------- | -----------------: | -------: | -------: | -------: | -----: |
+| DS1_v2   |             7.4818 |    126.4 |    163.8 |    194.5 |     0% |
+| DS2_v2   |             6.6715 |    131.7 |    215.5 |    341.0 |     0% |
+
+This experiment was performed before the later authenticated load-test series and is retained as historical instance-size evidence rather than being used as the primary current latency baseline.
+
+The DS2_v2 hourly value of approximately:
+
+```text
+11.1955 THB/hour
+```
+
+is treated as a pricing estimate rather than an Azure billing statement. It is not presented as an actual Container Apps billing rate.
+
+## 6. Canary and rollback
+
+The Lab 3 canary exercise was intended to deploy a second registered model version and route a controlled percentage of endpoint traffic to it while keeping the production revision active.
+
+The intended configuration was:
+
+```text
+blue: 90%
+green: 10%
+```
+
+However, a **true concurrent 90/10 traffic split could not be reliably implemented in the Azure Container Apps environment used for this Lab 3 deployment**.
+
+During deployment, the Container Apps environment reported the following platform limitation:
+
+```text
+ExpressEnvironmentFeatureNotSupported
+```
+
+The deployment adapter therefore could not establish the required Container Apps revision/registry configuration needed for the intended concurrent canary workflow.
+
+The deployment logs also showed:
+
+```text
+[attempt 1] generic --set update exit 0
+ACR registry auth attempt 1 didn't stick (registries still not wired) -- retrying...
+```
+
+The same registry-wiring condition occurred on the second attempt:
+
+```text
+ACR registry auth attempt 2 didn't stick (registries still not wired) -- retrying...
+```
+
+Although the CLI update command returned exit code 0, the expected registry/revision configuration was not actually present afterward. The adapter therefore retried the configuration rather than treating the operation as successfully established.
+
+This prevented the required concurrent 90/10 revision traffic split from being established reliably in the final Container Apps environment.
+
+This is an Azure Container Apps environment/platform limitation rather than a failure of the FastAPI application or the model itself. The environment used for the Lab does not support the required configuration for the concurrent canary workflow described in the original exercise.
+
+Therefore, the Lab 3 submission does **not** claim that a genuine concurrent 90/10 canary was successfully implemented in the final Container Apps environment.
+
+The rollback mechanism itself was implemented so that, when multiple revisions are available, traffic can be returned to the production revision using the Container Apps traffic-routing interface.
+
+The repository contains the canary/rollback helper:
+
+```text
+scripts/canary_roll.py
+```
+
+The intended rollback state is:
+
+```text
+blue: 100%
+green: 0%
+```
+
+The important limitation is that the 90/10 concurrent traffic experiment could not be completed reliably in the deployed Container Apps environment, so no unsupported claim is made that the final environment successfully routed exactly 10% of live traffic to a second revision.
+
+## 7. Cost analysis
+
+The project uses the following cost model for the serving estimate:
+
+```text
+cost = hourly_rate × (1000 / (throughput × utilisation)) / 3600
+```
+
+The DS2_v2 reference rate used by the project is:
+
+```text
+11.1955 THB/hour
+```
+
+This is a **reference pricing estimate**, not an Azure billing statement for the Container Apps deployment.
+
+The later authenticated 1-VU measurement produced:
+
+```text
+6.08 req/s
+```
+
+Using this measured request throughput as the workload reference gives the following illustrative cost estimates:
+
+| Utilisation | THB / 1,000 requests |
+| ----------: | -------------------: |
+|          5% |                10.23 |
+|         25% |                 2.05 |
+|         80% |                 0.64 |
+
+These values should be interpreted as a sensitivity analysis rather than actual Container Apps charges because the reference hourly rate is based on the DS2_v2 pricing assumption.
+
+The Container Apps deployment is also designed to support scale-to-zero. Therefore, actual cost depends on the amount of time the service is actively running rather than simply assuming a continuously warm DS2_v2 instance.
+
+The repository also contains:
+
+```text
+reports/lab5-cost.md
+```
+
+This file is retained as supporting cost information from the supplied project material. Its placeholder billing values are not used as evidence for the Lab 3 serving-cost calculation.
+
+## 8. Teardown
+
+The Lab 3 deployment resources were explicitly removed after testing rather than being left running.
+
+The repository provides:
+
+```bash
+make teardown
+```
+
+for the tagged Lab 3 resources.
+
+The teardown implementation uses the Lab 3 resource tags so that the resources created for the exercise can be removed without relying on manually remembered resource names.
+
+## 9. Validation
+
+The final automated test suite passes:
+
+```text
+34 passed, 1 warning
+```
+
+The warning is a deprecation warning from the installed Starlette/AnyIO dependency and does not cause a test failure.
+
+The serving container was additionally tested manually through:
+
+```text
+GET  /health
+GET  /ready
+POST /predict
+```
+
+All three returned successful responses during the local container test.
+
+## Conclusion
+
+The Lab 3 implementation demonstrates the serving workflow using a provider-independent FastAPI service deployed through Azure Container Apps, including model loading, health and readiness checks, single and batch inference, percentile-based load testing, payload-size testing, rollback support, cost estimation, and teardown.
+
+The load tests showed that the pre-declared p95 target of 200 ms was not met even at the lowest tested concurrency, while reliability degraded beyond approximately 2 VUs. The experiments also showed that batching can dramatically increase prediction throughput, while large request payloads can substantially increase latency.
+
+The intended concurrent 90/10 canary traffic experiment could not be completed in the final Azure Container Apps environment because the required revision/traffic configuration was not supported by the Container Apps environment. The deployment logs recorded the relevant platform limitation as `ExpressEnvironmentFeatureNotSupported` and showed that the expected registry/revision wiring did not persist after the traffic/update operation.
+
+This limitation is documented explicitly rather than presenting an unsupported 90/10 traffic split as successful evidence.
+
+The final automated validation passes with:
+
+```text
+34 passed, 1 warning
+```
+
+```
+```
