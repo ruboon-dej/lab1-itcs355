@@ -301,9 +301,7 @@ The FastAPI service exposes four endpoints:
 | `GET /health`         | Liveness check        |
 | `GET /ready`          | Model readiness check |
 
-The model is loaded during application startup rather than once per request.
-
-The prediction response includes the model version, allowing the deployed model version to be identified from a prediction response.
+The model is loaded during application startup rather than once per request. Prediction responses include the deployed model version.
 
 Run the service locally with:
 
@@ -329,11 +327,11 @@ The serving image is explicitly built for `linux/amd64`:
 docker buildx build --platform linux/amd64 ...
 ```
 
-This allows the same image architecture to be used in the deployment environment even when development is performed on an Apple Silicon Mac.
+This allows the same image architecture to be used in the deployment environment when development is performed on an Apple Silicon Mac.
 
 ### Local container verification
 
-The serving image can be run locally with:
+The serving image was successfully run locally with:
 
 ```bash
 docker run --rm \
@@ -343,17 +341,13 @@ docker run --rm \
   itcs355-serve:05c7001
 ```
 
-The service should then be checked with:
+The service successfully loaded the model:
 
-```bash
-curl -sS http://localhost:8080/health
-echo
-
-curl -sS http://localhost:8080/ready
-echo
+```text
+model loaded, version=2
 ```
 
-Expected responses are equivalent to:
+The health and readiness endpoints returned successful responses:
 
 ```json
 {"status":"alive"}
@@ -365,23 +359,15 @@ and:
 {"status":"ready","model_version":"2"}
 ```
 
-A single prediction can be tested with:
+A real prediction was also successfully executed:
 
-```bash
-curl -sS -X POST http://localhost:8080/predict \
-  -H "Content-Type: application/json" \
-  -d '{
-    "temp_c": 25.0,
-    "vibration_mm_s": 2.5,
-    "pressure_kpa": 101.3,
-    "hours_since_service": 100.0,
-    "load_pct": 50.0,
-    "ambient_humidity": 60.0
-  }'
-echo
+```json
+{"probability":0.03348807896248448,"model_version":"2"}
 ```
 
-The validated local container returned a successful prediction with model version `2`.
+The corresponding service log recorded the `/predict` request as HTTP 200 with approximately 66 ms latency.
+
+The Docker image targets `linux/amd64`, so Docker may report a platform warning when it is executed directly on an Apple Silicon development machine. This is expected because the deployment image was deliberately built for the target cloud architecture.
 
 ### Deployment
 
@@ -393,7 +379,7 @@ Build and push the serving image with:
 make serve-image-push
 ```
 
-Deploy with:
+Deploy the registered model with:
 
 ```bash
 make deploy VERSION=2
@@ -405,7 +391,9 @@ Run a smoke test with:
 make smoke
 ```
 
-The Azure adapter is responsible for the provider-specific deployment details. The rest of the service remains provider-independent.
+The deployment uses **Azure Container Apps** and the registered model version is used as the deployment model reference.
+
+The provider-specific deployment details are isolated in `cloudlayer/azure.py`, while the FastAPI serving implementation remains provider-independent.
 
 ### Health versus readiness
 
@@ -415,7 +403,7 @@ The Azure adapter is responsible for the provider-specific deployment details. T
 
 `/ready` answers whether the service is ready to serve predictions, including whether the model has successfully loaded.
 
-Therefore a service can be alive while not yet ready. A deployment system should use readiness rather than liveness to decide whether traffic should be sent to a new instance.
+Therefore, a service can be alive while not yet ready. A deployment system should use readiness rather than liveness when deciding whether a new instance should receive traffic.
 
 ### Load testing
 
@@ -431,7 +419,7 @@ The target is encoded directly in `loadtest/k6.js`:
 'predict_latency_ms': ['p(95)<200']
 ```
 
-This target appears in the Lab 3 load-test history before the finalized measurement results.
+The load-test implementation records percentile latency rather than relying only on mean latency.
 
 Run the standard load test with:
 
@@ -439,18 +427,31 @@ Run the standard load test with:
 make loadtest TARGET=https://<endpoint>/predict
 ```
 
-The load-test implementation records percentile latency rather than relying on mean latency. The report includes p50, p95, p99, throughput, and error rate.
+The k6 implementation supports concurrency, batch requests, and payload-size experiments.
 
-The later authenticated measurements showed:
+Load-test evidence is preserved in:
 
-| VUs |  Throughput |      p50 |      p95 |      p99 | Errors |
-| --: | ----------: | -------: | -------: | -------: | -----: |
-|   1 |  6.08 req/s | 146.0 ms | 233.0 ms | 236.4 ms |  0.00% |
-|   2 | 10.43 req/s | 186.0 ms | 258.0 ms | 269.9 ms |  0.00% |
-|   3 | 12.69 req/s | 236.4 ms | 302.5 ms | 332.9 ms |  2.09% |
-|   5 | 26.75 req/s | 239.7 ms | 302.0 ms | 333.8 ms | 52.57% |
+* `reports/lab3-load.md`
+* `reports/lab3-report.md`
 
-The first tested concurrency exceeding the 1% error threshold was 3 VUs.
+### Concurrency results
+
+The authenticated load-test series produced:
+
+| VUs | Requests | Throughput (req/s) | p50 (ms) | p95 (ms) | p99 (ms) | Error rate |
+| --: | -------: | -----------------: | -------: | -------: | -------: | ---------: |
+|   1 |      365 |               6.08 |    146.0 |    233.0 |    236.4 |      0.00% |
+|   2 |      627 |              10.43 |    186.0 |    258.0 |    269.9 |      0.00% |
+|   3 |      765 |              12.69 |    236.4 |    302.5 |    332.9 |      2.09% |
+|   5 |    1,611 |              26.75 |    239.7 |    302.0 |    333.8 |     52.57% |
+
+The first tested concurrency level exceeding the 1% error threshold was **3 VUs**.
+
+The 1- and 2-VU runs produced no failed requests, although their p95 latency was above the pre-declared 200 ms target.
+
+At higher concurrency, reliability degraded. The 5-VU run produced substantial failures, including Azure HTTP/2 `INTERNAL_ERROR` responses.
+
+These results establish the observed serving behaviour under the tested deployment rather than claiming that the 200 ms target was achieved.
 
 ### Batch inference
 
@@ -467,111 +468,116 @@ k6 run \
   loadtest/k6.js
 ```
 
-The recorded batch experiment processed approximately 594.96 predictions/s with zero batch errors.
+The recorded batch experiment produced:
 
-Batch inference substantially increased prediction throughput, although the p95 latency of an individual batch request exceeded the 200 ms target.
+* Batch size: 100
+* Batch requests: 357
+* Predictions processed: 35,700
+* Batch request throughput: 5.9496 batches/s
+* Prediction throughput: approximately 594.96 predictions/s
+* Batch p50: 140.8 ms
+* Batch p95: 265.8 ms
+* Batch p99: 461.0 ms
+* Batch errors: 0%
+
+Batch inference therefore substantially increased prediction throughput compared with individual prediction requests, although individual batch-request latency exceeded the 200 ms p95 target.
 
 ### Payload-size experiment
 
 The load-test script supports payload-size experiments while keeping the prediction features unchanged.
 
-The recorded experiment showed:
+The recorded results were:
 
-| Payload |        p95 | Throughput |
-| ------: | ---------: | ---------: |
-|    1 KB |   164.2 ms | 7.40 req/s |
-|   10 KB |   212.2 ms | 7.09 req/s |
-|  100 KB | 2,029.3 ms | 0.88 req/s |
-|  500 KB | 1,384.1 ms | 1.43 req/s |
+| Payload | Requests | p50 (ms) | p95 (ms) | p99 (ms) | Error rate | Throughput (req/s) |
+| ------: | -------: | -------: | -------: | -------: | ---------: | -----------------: |
+|    1 KB |      444 |    124.6 |    164.2 |    220.2 |         0% |               7.40 |
+|   10 KB |      426 |    129.8 |    212.2 |    266.9 |         0% |               7.09 |
+|  100 KB |       53 |    941.4 |  2,029.3 |  2,349.3 |         0% |               0.88 |
+|  500 KB |       87 |    521.9 |  1,384.1 |  1,578.7 |         0% |               1.43 |
 
-This demonstrates that unnecessarily large request payloads can significantly degrade serving performance even when requests continue returning successfully.
+The 1 KB payload met the pre-declared p95 target.
+
+At 10 KB, p95 slightly exceeded the target.
+
+The 100 KB and 500 KB payloads caused substantial latency and throughput degradation despite returning successful HTTP responses.
+
+This demonstrates that unnecessarily large request payloads can become a serving bottleneck even when the inference application itself continues returning successful predictions.
 
 ### Canary and rollback
 
-The repository provides:
-
-```bash
-make canary
-```
-
-to deploy the canary revision and shift traffic to a 90/10 split.
-
-The rollback command is:
-
-```bash
-make rollback
-```
-
-The recorded canary experiment used:
+The intended Lab 3 canary workflow is to deploy a second revision and route a controlled percentage of traffic to it, for example:
 
 ```text
-blue:  90%
+blue: 90%
 green: 10%
 ```
 
-Degradation was detected from aggregate latency metrics without using model-version identity to decide which variant was performing worse.
+The repository contains the canary/rollback implementation for this workflow.
 
-The final rollback state was:
+However, the Azure Container Apps environment available for this deployment is an **Express environment**. Express environments do not support switching from single active revision mode to multiple active revision mode.
 
-```text
-blue:  100%
-green: 0%
-```
-
-The traffic transitions and timestamps are recorded in:
+The attempted revision-mode change failed with the exact Azure error:
 
 ```text
-reports/lab3-report.md
+(ExpressEnvironmentFeatureNotSupported)
+'Not Single Active Revisions Mode' is not supported on express environments.
 ```
 
-This provides evidence of actual traffic movement rather than only documenting that a rollback command exists.
+Therefore, a **concurrent 90/10 traffic split between two active revisions could not be performed in this environment**.
+
+This is an Azure Container Apps platform restriction rather than an application or FastAPI implementation error. It cannot be solved by changing the prediction service code.
+
+Consequently, the repository should not claim that a true concurrent 90/10 blue/green split was successfully achieved in this Express environment.
+
+The canary/rollback helper remains in the repository because it implements the intended deployment workflow and can be used in an Azure Container Apps environment that supports multiple active revisions.
 
 ### Cost
 
-The project includes a reproducible cost-report command:
+Serving cost is estimated using the measured serving throughput, the instance hourly rate, and an assumed utilisation level.
 
-```bash
-make cost-report
-```
-
-Its defaults are:
-
-```text
-ESTIMATE=25
-ACTUAL=22
-RPS=58.33
-INSTANCE=Standard_DS2_v2
-```
-
-The current generated report therefore contains:
-
-```text
-Estimate: 25.00 THB
-Actual:   22.00 THB
-Gap:      -3.00 THB (-12.0%)
-```
-
-The report is written to:
-
-```text
-reports/lab5-cost.md
-```
-
-The filename is part of the supplied scaffold configuration. It is retained rather than renamed so that the preconfigured Makefile and script interface remain reproducible.
-
-The cost model uses:
+The project uses the following cost model:
 
 ```text
 cost = hourly_rate × (1000 / (throughput × utilisation)) / 3600
 ```
 
-The DS2_v2 project estimate is currently 11.1955 THB/hour.
+The current `Standard_DS2_v2` pricing estimate is approximately:
+
+```text
+11.1955 THB/hour
+```
+
+The previous measured DS2_v2 throughput used for the cost calculation was:
+
+```text
+6.671472 predictions/s
+```
+
+The estimated cost per 1,000 predictions is:
+
+| Utilisation | THB / 1,000 predictions |
+| ----------: | ----------------------: |
+|          5% |                  9.3229 |
+|         25% |                  1.8646 |
+|         80% |                  0.5827 |
+
+The 80% utilisation figure is used as the primary estimate, while the other utilisation levels are shown because utilisation is an important assumption for a continuously running serving instance.
+
+The cost analysis also considers the advantage of batching: batch inference can process substantially more predictions per second, which can reduce the compute cost per prediction when the application's latency requirements allow batching.
 
 The detailed cost analysis is documented in:
 
 ```text
 reports/lab3-report.md
 ```
+
+An additional cost-report artifact is retained at:
+
+```text
+reports/lab5-cost.md
+```
+
+This file originates from the supplied scaffold and contains the project's cost-report calculations. It is retained as supporting cost information; the authoritative Lab 3 cost analysis is `reports/lab3-report.md`.
 
 ### Teardown
 
@@ -583,18 +589,11 @@ Use:
 make teardown
 ```
 
-The teardown implementation uses the Lab 3 resource tags so that the relevant resources can be removed without manually tracking every generated resource name.
+The teardown implementation uses the Lab 3 resource tags so that resources created for the exercise can be removed without manually tracking every generated resource name.
 
-### Reproducibility checklist
+### Validation
 
-Before submission:
-
-```bash
-git diff --check
-make test
-```
-
-The final test suite currently passes:
+The final automated test suite passes:
 
 ```text
 34 passed, 1 warning
@@ -602,26 +601,19 @@ The final test suite currently passes:
 
 The warning is a dependency deprecation warning and does not cause the test suite to fail.
 
-Also verify:
+The serving container was also manually tested through:
 
-* [ ] `git diff --check` produces no output
-* [ ] `make test` passes
-* [ ] Local `/health` returns 200
-* [ ] Local `/ready` returns 200 after model loading
-* [ ] `/predict` returns a prediction with a model version
-* [ ] Serving image builds for `linux/amd64`
-* [ ] Load-test target was committed before the reported measurements
-* [ ] p50, p95, and p99 are reported rather than only mean latency
-* [ ] Canary traffic movement has timestamped evidence
-* [ ] Rollback has timestamped evidence
-* [ ] Rollback detection is based on aggregate metrics rather than model identity
-* [ ] Lab 3 resources are torn down after testing
-* [ ] Temporary files such as `azure.diff` and backup files are removed before submission
-* [ ] Generated deployment artifacts are removed if they are not intended to be submitted
+```text
+GET  /health
+GET  /ready
+POST /predict
+```
+
+All returned successful responses during the local container verification.
 
 ### Lab 3 evidence
 
-The main evidence files are:
+The main Lab 3 evidence files are:
 
 ```text
 reports/lab3-report.md
@@ -629,20 +621,43 @@ reports/lab3-load.md
 loadtest/k6.js
 service/Dockerfile.serve
 cloudlayer/azure.py
+scripts/canary_roll.py
 Makefile
 ```
 
-The Git history also contains the pre-declared latency target. In particular, the Lab 3 serving/load-test history includes commits:
+The repository therefore provides evidence for:
+
+* FastAPI model serving
+* model loading during startup
+* health and readiness checks
+* single prediction
+* batch prediction
+* containerisation
+* `linux/amd64` serving-image construction
+* pre-declared p95 latency target
+* concurrency testing
+* percentile latency measurements
+* error-rate measurements
+* batch-throughput measurements
+* payload-size experiments
+* serving-cost analysis
+* deployment and teardown logic
+* attempted canary/multiple-revision deployment
+
+The main limitation is the Azure Container Apps Express environment's inability to support multiple active revisions. This prevented the intended concurrent 90/10 canary traffic split, and the exact Azure platform error is preserved above.
+
+### Conclusion
+
+Lab 3 successfully demonstrates the provider-independent serving workflow, containerised model inference, health and readiness checks, single and batch inference, percentile-based load testing, payload-size experiments, deployment, cost analysis, and teardown.
+
+The experiments also establish important serving limitations. The declared p95 target of 200 ms was not met by the later authenticated baseline measurements, and reliability degraded beyond the tested 2-VU range. Batch inference substantially increased prediction throughput, while unnecessarily large payloads substantially increased latency.
+
+The intended concurrent canary traffic split could not be completed because the available Azure Container Apps Express environment does not support multiple active revisions. The exact platform error was:
 
 ```text
-78b1bae  Complete Lab 3 serving and load testing
-18cdfdf  Fix k6 latency and payload measurements
+(ExpressEnvironmentFeatureNotSupported)
+'Not Single Active Revisions Mode' is not supported on express environments.
 ```
 
-The latency threshold is present in the historical `loadtest/k6.js`:
+This limitation is documented explicitly rather than presenting an unsupported 90/10 canary as successfully completed.
 
-```javascript
-'predict_latency_ms': ['p(95)<200']
-```
-
-This is important because the rubric explicitly checks that the latency target existed before the measurement results were written.
