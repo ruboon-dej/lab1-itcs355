@@ -34,10 +34,10 @@ export const options = {
   },
 };
 
-const headers = {
-  'Content-Type': 'application/json',
-  'Authorization': `Bearer ${__ENV.AZURE_ENDPOINT_KEY}`,
-};
+const headers = { 'Content-Type': 'application/json' };
+if (__ENV.AZURE_ENDPOINT_KEY) {
+  headers['Authorization'] = `Bearer ${__ENV.AZURE_ENDPOINT_KEY}`;
+}
 
 function samplePayload() {
   return {
