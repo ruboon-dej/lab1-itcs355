@@ -1,0 +1,21 @@
+{
+  "window_rows": 500,
+  "trials": 200,
+  "quantile": 0.99,
+  "null_max_psi_quantile": 0.08946,
+  "null_max_psi_median": 0.04591,
+  "threshold": 0.09,
+  "per_feature_null_p99": {
+    "temp_c": 0.08487,
+    "vibration_mm_s": 0.06001,
+    "pressure_kpa": 0.0454,
+    "hours_since_service": 0.05342,
+    "load_pct": 0.08045,
+    "ambient_humidity": 0.05543
+  },
+  "conventional": {
+    "no_change_below": 0.1,
+    "significant_above": 0.25
+  },
+  "note": "threshold = ceil(quantile of max-over-features null PSI, 2 d.p.)"
+}

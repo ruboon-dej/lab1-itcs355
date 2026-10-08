@@ -12,11 +12,13 @@ import logging
 import os
 import time
 import uuid
+from collections import deque
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
 from service.schemas import BatchRequest, BatchResponse, PredictRequest, PredictResponse
 
@@ -27,6 +29,21 @@ logging.basicConfig(
 log = logging.getLogger("service")
 
 STATE: dict[str, Any] = {"model": None, "version": os.environ.get("MODEL_VERSION", "unknown")}
+
+# --- Lab 4 metrics -----------------------------------------------------------------
+# Scraped from /metrics. Names match monitoring/dashboard.json. NOTE: prometheus_client
+# keeps counters per process, so the dashboard demo runs ONE uvicorn worker. The container
+# CMD uses two; scrape one pod per worker or enable multiprocess mode before relying on
+# these numbers in a multi-worker deployment.
+REQUESTS = Counter("http_requests_total", "HTTP requests", ["route", "status_class"])
+LATENCY = Histogram(
+    "request_latency_ms", "Request latency in milliseconds", ["route"],
+    buckets=(25, 50, 100, 150, 200, 250, 300, 500, 1000, 2000, 5000),
+)
+MODEL_INFO = Gauge("model_version_info", "Model version being served (value is always 1)", ["version"])
+FEATURE_MEAN = Gauge("feature_rolling_mean", "Mean of each input feature over the last FEATURE_WINDOW requests", ["feature"])
+FEATURE_WINDOW = int(os.environ.get("FEATURE_WINDOW", "500"))
+_RECENT: dict[str, deque] = {}
 
 
 def _load_model():
@@ -91,6 +108,8 @@ def _load_model():
 async def lifespan(app: FastAPI):
     try:
         STATE["model"] = _load_model()
+        MODEL_INFO.clear()
+        MODEL_INFO.labels(version=str(STATE["version"])).set(1)
         log.info('"model loaded, version=%s"', STATE["version"])
     except Exception as exc:  # readiness stays false; liveness still passes
         STATE["model"] = None
@@ -106,8 +125,17 @@ app = FastAPI(title="ITCS355 inference", version="1.0.0", lifespan=lifespan)
 async def add_request_context(request: Request, call_next):
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
     started = time.perf_counter()
-    response = await call_next(request)
+    path = request.url.path
+    try:
+        response = await call_next(request)
+    except Exception:
+        if path != "/metrics":
+            REQUESTS.labels(path, "5xx").inc()
+        raise
     latency_ms = (time.perf_counter() - started) * 1000
+    if path != "/metrics":
+        REQUESTS.labels(path, f"{response.status_code // 100}xx").inc()
+        LATENCY.labels(path).observe(latency_ms)
     response.headers["x-request-id"] = request_id
     response.headers["x-model-version"] = str(STATE["version"])
     log.info(
@@ -115,6 +143,12 @@ async def add_request_context(request: Request, call_next):
         request_id, request.url.path, response.status_code, latency_ms, STATE["version"],
     )
     return response
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics() -> Response:
+    """Prometheus scrape endpoint. Not part of the prediction API."""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health")
@@ -144,6 +178,10 @@ def _score(rows: list[dict]) -> list[float]:
     from src.data import FEATURES
 
     frame = pd.DataFrame(rows)[FEATURES]
+    for feature in FEATURES:  # rolling input statistics: the drift signal the dashboard shows
+        window = _RECENT.setdefault(feature, deque(maxlen=FEATURE_WINDOW))
+        window.extend(frame[feature].tolist())
+        FEATURE_MEAN.labels(feature).set(sum(window) / len(window))
     return [float(p) for p in STATE["model"].predict_proba(frame)[:, 1]]
 
 

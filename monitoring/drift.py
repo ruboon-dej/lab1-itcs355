@@ -110,6 +110,8 @@ def main() -> int:
                     help="alert above this PSI. Justify your value in the README.")
     ap.add_argument("--out", type=Path, default=Path("reports/drift.json"))
     ap.add_argument("--emit", action="store_true", help="send scores as cloud metrics")
+    ap.add_argument("--pushgateway", default=None,
+                    help="host:port of a Prometheus Pushgateway; feeds the local dashboard")
     args = ap.parse_args()
 
     reference = pd.read_csv(args.reference)
@@ -124,12 +126,29 @@ def main() -> int:
         print(f"{r.feature:<22}{r.psi:>10.5f}{r.ks_statistic:>10.5f}  {r.verdict}")
 
     if args.emit:
-        # TODO(Lab 4): implement emit_metric in your adapter, then this reaches
-        # CloudWatch / Azure Monitor / Cloud Monitoring and your dashboard shows it.
-        from cloudlayer.factory import get_adapter
-        adapter = get_adapter(config.load(strict=False))
-        for r in results:
-            adapter.emit_metric(f"drift.psi.{r.feature}", r.psi)
+        # A failed metric write must never hide a drift alert: report it and carry on.
+        try:
+            from cloudlayer.factory import get_adapter
+            adapter = get_adapter(config.load(strict=False))
+            for r in results:
+                adapter.emit_metric(f"drift.psi.{r.feature}", r.psi)
+            print("metrics handed to the cloud exporter (delivery is confirmed in the provider, not here)")
+        except Exception as exc:  # noqa: BLE001
+            print(f"WARNING  metric emit failed: {exc}")
+
+    if args.pushgateway:
+        try:
+            from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
+            registry = CollectorRegistry()
+            g_psi = Gauge("drift_psi", "PSI of a feature against the reference window", ["feature"], registry=registry)
+            g_ks = Gauge("drift_ks", "KS statistic of a feature against the reference window", ["feature"], registry=registry)
+            for r in results:
+                g_psi.labels(r.feature).set(r.psi)
+                g_ks.labels(r.feature).set(r.ks_statistic)
+            push_to_gateway(args.pushgateway, job="drift", registry=registry)
+            print(f"pushed to Pushgateway at {args.pushgateway}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"WARNING  pushgateway failed: {exc}")
 
     breached = [r for r in results if r.psi >= args.threshold]
     if breached:

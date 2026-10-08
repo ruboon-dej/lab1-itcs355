@@ -7,26 +7,36 @@ service: itcs355-predict
 
 objectives:
   - name: availability
-    target: 0.995              # TODO(Lab 4): your number, and defend it
+    # 0.99 = a 1% error budget (about 7 hours of total failure in 30 days). Not 0.999: the app runs a
+    # single replica (max-replicas 1) that scales to zero, with no redundancy, so a higher
+    # promise would be one the architecture cannot keep.
+    target: 0.99
     window: 30d
     measurement: "successful responses / total responses, excluding 4xx"
     on_budget_exhausted: |
-      TODO(Lab 4): what actually happens. Freeze deploys? Page someone? Fall back to the
-      last known-good version? Accept it and revise the target? All are defensible;
-      silence is not.
+      1. Freeze deploys except fixes. 2. If the budget burned within a day of a deploy, redeploy
+      the previous SHA-tagged image (images in the registry are immutable, so this is a
+      redeploy, not a rebuild). 3. If it burned with no deploy, set min-replicas to 1 and
+      max-replicas to 2 and accept the cost. 4. If that still cannot hold 0.99, revise the
+      target in writing rather than live with a number nobody believes.
 
   - name: latency
-    target_p95_ms: 200         # TODO(Lab 4): must match the target you set in loadtest/k6.js
+    # Matches loadtest/k6.js. Honest status: Lab 3 measured p95 233 ms at 1 VU
+    # (reports/lab3-load.md), so this objective is NOT currently met.
+    target_p95_ms: 200
     window: 7d
     measurement: "p95 of /predict, measured at the endpoint, not at the client"
     on_budget_exhausted: |
-      TODO(Lab 4)
+      Compare p95 with p99 first: a large gap in a repeating pattern means cold starts, so set
+      min-replicas to 1. If p95 is high everywhere, raise CPU from 0.5 to 1.0 vCPU and re-run
+      the load test. Only if neither reaches 200 ms, revise the target to the measured p95 plus
+      a margin and record why.
 
   - name: freshness
     target_max_model_age_days: 30
     window: continuous
     measurement: "days since the production model version was trained"
     on_budget_exhausted: |
-      TODO(Lab 4): this one interacts with your retraining trigger in Lab 5. Keep them
-      consistent — an SLO demanding a 30-day-old model and a 90-day retrain schedule is
-      a contradiction you should notice here rather than in production.
+      Retrain now, but only after the drift post-mortem check (schema and null rate first).
+      The Lab 5 retraining trigger must fire at or before 30 days, so this objective is never
+      the thing that forces a retrain; it is the backstop if the trigger fails.

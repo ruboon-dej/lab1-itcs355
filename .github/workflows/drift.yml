@@ -1,0 +1,100 @@
+# ITCS355 Lab 4 — scheduled drift detection.
+#
+# Compares a recent window of inputs against the training reference. There is no live
+# traffic in this course setup, so the window is simulated: fresh data from the same
+# process (a different seed per run), optionally with an injected shift.
+#
+# Kill switch: scheduled runs only fire while the repo variable DRIFT_ENABLED is "true".
+# Set it to "false" (or delete this file) when the exercise is over, or this keeps running.
+#
+# Injection: set repo variable DRIFT_INJECT_MODE to shift | scale | mix (and optionally
+# DRIFT_INJECT_MAGNITUDE). The time you set it is t0; the alert timestamp minus t0 is the
+# detection time. "none" (or unset) is normal operation.
+
+name: Drift
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Injection mode for this run"
+        type: choice
+        options: [from-variable, none, shift, scale, mix]
+        default: from-variable
+      magnitude:
+        description: "shift: added to the mean; scale: spread multiplier"
+        default: "6"
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.DRIFT_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      CLOUD_PROVIDER: azure
+      APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
+      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      INPUT_MODE: ${{ inputs.mode }}
+      INPUT_MAGNITUDE: ${{ inputs.magnitude }}
+      VAR_MODE: ${{ vars.DRIFT_INJECT_MODE }}
+      VAR_MAGNITUDE: ${{ vars.DRIFT_INJECT_MAGNITUDE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements-ops.txt
+
+      - name: Build the reference and a recent window
+        run: |
+          MODE="${INPUT_MODE:-from-variable}"
+          if [ "$MODE" = "from-variable" ]; then MODE="${VAR_MODE:-none}"; fi
+          MAG="${INPUT_MAGNITUDE:-${VAR_MAGNITUDE:-6}}"
+          echo "MODE=$MODE" >> "$GITHUB_ENV"
+          echo "injection mode: $MODE (magnitude $MAG)"
+          python scripts/make_dataset.py
+          python scripts/make_dataset.py --seed "${{ github.run_number }}" --out data/fresh.csv
+          python scripts/make_window.py --source data/fresh.csv --n 500 \
+            --seed "${{ github.run_number }}" --out data/window.csv
+          if [ "$MODE" = "none" ]; then
+            cp data/window.csv data/current.csv
+          else
+            python scripts/inject_drift.py --source data/window.csv --out data/current.csv \
+              --feature temp_c --mode "$MODE" --magnitude "$MAG"
+          fi
+
+      - name: Detect drift and emit metrics
+        id: drift
+        run: |
+          THR=$(python -c "import json;print(json.load(open('monitoring/drift_threshold.json'))['threshold'])")
+          echo "THR=$THR" >> "$GITHUB_ENV"
+          set +e
+          python -m monitoring.drift --current data/current.csv --threshold "$THR" --emit
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Alert
+        if: ${{ steps.drift.outputs.code == '2' }}
+        run: |
+          MSG="DRIFT ALERT $(date -u +%FT%TZ) - threshold ${THR}, injection mode ${MODE}. ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          echo "$MSG"
+          if [ -n "$ALERT_WEBHOOK_URL" ]; then
+            jq -n --arg m "$MSG" '{content:$m, text:$m}' \
+              | curl -sS -X POST -H 'Content-Type: application/json' -d @- "$ALERT_WEBHOOK_URL"
+          else
+            echo "ALERT_WEBHOOK_URL is not set: no chat message sent."
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: drift-report
+          path: reports/drift.json
+
+      - name: Fail the run when drift was detected (GitHub then emails you too)
+        run: exit ${{ steps.drift.outputs.code }}
