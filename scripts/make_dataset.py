@@ -49,7 +49,7 @@ def build(seed: int) -> pd.DataFrame:
                 "reading_id": reading_id,
                 "machine_id": machine,
                 "temp_c": round(float(temp), 3),
-                "vibration_mm_s": round(float(vib), 3),
+                "vibration_mm_sec": round(float(vib), 3),
                 "pressure_kpa": round(float(pressure), 3),
                 "hours_since_service": round(hours, 3),
                 "load_pct": round(load, 3),
