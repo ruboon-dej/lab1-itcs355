@@ -67,7 +67,8 @@ jobs:
           docker buildx build --platform linux/amd64 -f service/Dockerfile.serve \
             -t "itcs355-serve:${SHA}" --load .
 
-      - name: Push image and deploy to staging
+      - name: Push the image to the registry
+        id: push
         env:
           SERVE_IMAGE_TAG: itcs355-serve:${{ github.event.workflow_run.head_sha }}
         run: |
@@ -76,12 +77,56 @@ jobs:
           from src import config
           from cloudlayer.factory import get_adapter
 
-          cfg = config.load()
-          adapter = get_adapter(cfg)
-          sha = os.environ["SHA"]
-          endpoint = os.environ["ENDPOINT_NAME"]
-          print(adapter.deploy(f"{cfg.model_registry_name}:{sha}", endpoint, "Standard_DS2_v2"))
+          uri = get_adapter(config.load()).push_image(os.environ["SERVE_IMAGE_TAG"])
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"image_uri={uri}\n")
+          print("pushed", uri)
           PY
+
+      # Why this is not adapter.deploy(): that method creates the app with a public image,
+      # saves the registry login in a SEPARATE command, then switches to the private image.
+      # In this subscription the saved login did not stick (the app's registry list stayed
+      # empty) and Azure refused the pull with "authentication failed", although the same
+      # credentials, image and environment worked for another app. Passing the registry
+      # login inside the create command works, so the workflow does it that way.
+      - name: Create or update the staging app (registry login in the same command)
+        env:
+          IMAGE_URI: ${{ steps.push.outputs.image_uri }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+        run: |
+          set -euo pipefail
+          APP="$ENDPOINT_NAME"; RG="$AZURE_RESOURCE_GROUP"; SERVER="${ACR_NAME}.azurecr.io"
+          az acr update --name "$ACR_NAME" --resource-group "$RG" --admin-enabled true -o none
+          ACR_USER=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
+          ACR_PASS=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
+          echo "::add-mask::$ACR_PASS"
+          VARS=("MODEL_VERSION=$SHA" "MODEL_REGISTRY_NAME=$MODEL_REGISTRY_NAME" "MODEL_PATH=/app/model/model.joblib")
+
+          create_app() {
+            az containerapp create --name "$APP" --resource-group "$RG" \
+              --environment "$AZURE_CONTAINERAPPS_ENVIRONMENT" --image "$IMAGE_URI" \
+              --registry-server "$SERVER" --registry-username "$ACR_USER" --registry-password "$ACR_PASS" \
+              --target-port 8080 --ingress external --min-replicas 0 --max-replicas 1 \
+              --cpu 0.5 --memory 1.0Gi --env-vars "${VARS[@]}" -o none
+          }
+          update_app() {
+            az containerapp registry set --name "$APP" --resource-group "$RG" \
+              --server "$SERVER" --username "$ACR_USER" --password "$ACR_PASS" -o none
+            az containerapp update --name "$APP" --resource-group "$RG" --image "$IMAGE_URI" \
+              --cpu 0.5 --memory 1.0Gi --min-replicas 0 --max-replicas 1 \
+              --set-env-vars "${VARS[@]}" -o none
+          }
+
+          if az containerapp show --name "$APP" --resource-group "$RG" >/dev/null 2>&1; then
+            if ! update_app; then
+              echo "::warning::updating the existing staging app failed; recreating it (staging is disposable)"
+              az containerapp delete --name "$APP" --resource-group "$RG" --yes -o none
+              create_app
+            fi
+          else
+            create_app
+          fi
+          echo "staging app ready: $APP running image $IMAGE_URI"
 
       - name: Smoke test (three known payloads)
         run: |
@@ -101,8 +146,17 @@ jobs:
               {"temp_c": 95.0, "vibration_mm_s": 9.0, "pressure_kpa": 340.0,
                "hours_since_service": 8800.0, "load_pct": 95.0, "ambient_humidity": 70.0},
           ]
+          import time
           for payload in payloads:
-              out = adapter.invoke(endpoint, payload)
+              for attempt in range(6):  # the app scales to zero, so the first call can be a cold start
+                  try:
+                      out = adapter.invoke(endpoint, payload)
+                      break
+                  except Exception as exc:  # noqa: BLE001
+                      print(f"attempt {attempt + 1} failed: {exc}")
+                      time.sleep(15)
+              else:
+                  raise SystemExit("smoke test: the service never answered")
               assert 0.0 <= out["probability"] <= 1.0, out
               assert out["model_version"] == sha, f"serving {out['model_version']}, expected {sha}"
               print("ok", out)
