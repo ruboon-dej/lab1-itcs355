@@ -20,7 +20,10 @@ from sklearn.ensemble import RandomForestClassifier
 from src import config, data, seeds
 
 RAW = config.REPO_ROOT / "data" / "raw" / "sensors.csv"
-LATENCY_BUDGET_MS = 50.0  # TODO(Lab 4): set from YOUR p95 target in loadtest/k6.js
+# Derived from the p95 target in loadtest/k6.js (200 ms end to end): inference may use at most a
+# quarter of it, leaving the rest for network, JSON handling and queueing. Measured here at
+# about 5 ms per single prediction, so 50 ms is ~10x headroom for a slow, noisy CI runner.
+LATENCY_BUDGET_MS = 50.0
 
 
 @pytest.fixture(scope="module")

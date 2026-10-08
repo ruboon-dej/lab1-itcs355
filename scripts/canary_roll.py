@@ -106,7 +106,6 @@ def _load_state() -> dict:
 def cmd_canary(args: argparse.Namespace) -> None:
     _load_env()
     endpoint = _get_endpoint_name()
-    project_id = os.environ.get("PROJECT_ID", "")
     registry = os.environ.get("CONTAINER_REGISTRY", "").rstrip("/")
     model_version = str(args.version)
 

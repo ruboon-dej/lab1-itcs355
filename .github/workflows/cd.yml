@@ -1,8 +1,12 @@
-# ITCS355 Lab 4 — continuous deployment.
+# ITCS355 Lab 4 — continuous deployment to staging (Azure Container Apps).
 #
-# Runs only on main, only after CI is green. Credentials come from OIDC federation, not
-# from stored keys — TODO(Lab 4): uncomment the block for YOUR provider and delete the
-# other two.
+# Runs only on main, only after CI is green, only through the `staging` environment.
+# Credentials: OIDC federation to a user-assigned managed identity. No long-lived key is
+# stored anywhere. (An Entra app registration is blocked in the university tenant.)
+#
+# Why the image is rebuilt here: adapter.deploy() pushes a LOCAL image, and this workflow
+# runs on a different runner from CI's build job. The rebuild is from the exact commit CI
+# tested (head_sha) and is tagged with that SHA, never `latest`.
 
 name: CD
 
@@ -21,42 +25,86 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment: staging
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+      # The eight capability slots (cloud.env is gitignored, so they come from repo variables).
+      CLOUD_PROVIDER: azure
+      PROJECT_ID: ${{ vars.PROJECT_ID }}
+      REGION: ${{ vars.REGION }}
+      BLOB_URI: ${{ vars.BLOB_URI }}
+      CONTAINER_REGISTRY: ${{ vars.CONTAINER_REGISTRY }}
+      MLFLOW_TRACKING_URI: sqlite:///mlflow.db
+      MODEL_REGISTRY_NAME: ${{ vars.MODEL_REGISTRY_NAME }}
+      IDENTITY_REF: ${{ vars.IDENTITY_REF }}
+      # Read directly by the Azure adapter.
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_CONTAINERAPPS_ENVIRONMENT: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}
+      ENDPOINT_NAME: ${{ vars.STAGING_ENDPOINT }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-      # --- AWS ---------------------------------------------------------------
-      # - uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-      #     aws-region: ${{ vars.REGION }}
-      # - run: aws ecr get-login-password --region ${{ vars.REGION }} | docker login --username AWS --password-stdin ${{ vars.CONTAINER_REGISTRY }}
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # --- Azure -------------------------------------------------------------
-      # - uses: azure/login@v2
-      #   with:
-      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
-      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-      #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      # - run: az acr login --name ${{ vars.ACR_NAME }}
+      - run: az acr login --name ${{ vars.ACR_NAME }}
 
-      # --- GCP ---------------------------------------------------------------
-      # - uses: google-github-actions/auth@v2
-      #   with:
-      #     workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-      #     service_account: ${{ secrets.GCP_DEPLOY_SA }}
-      # - run: gcloud auth configure-docker ${{ vars.REGION }}-docker.pkg.dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Push image
+      - name: Install adapter dependencies (hash-locked, no mlflow)
+        run: pip install -r requirements-ops.txt
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build serving image (tagged with the commit SHA)
         run: |
-          echo "TODO(Lab 4): push the SHA-tagged image through your adapter"
-          # python -c "from src import config; from cloudlayer.factory import get_adapter; \
-          #   print(get_adapter(config.load()).push_image('itcs355-serve:${{ github.sha }}'))"
+          docker buildx build --platform linux/amd64 -f service/Dockerfile.serve \
+            -t "itcs355-serve:${SHA}" --load .
 
-      - name: Deploy to staging
+      - name: Push image and deploy to staging
+        env:
+          SERVE_IMAGE_TAG: itcs355-serve:${{ github.event.workflow_run.head_sha }}
         run: |
-          echo "TODO(Lab 4): adapter.deploy(model_ref, endpoint, instance)"
+          python - <<'PY'
+          import os
+          from src import config
+          from cloudlayer.factory import get_adapter
 
-      - name: Smoke test
+          cfg = config.load()
+          adapter = get_adapter(cfg)
+          sha = os.environ["SHA"]
+          endpoint = os.environ["ENDPOINT_NAME"]
+          print(adapter.deploy(f"{cfg.model_registry_name}:{sha}", endpoint, "Standard_DS2_v2"))
+          PY
+
+      - name: Smoke test (three known payloads)
         run: |
-          echo "TODO(Lab 4): adapter.invoke() with three known payloads."
-          echo "A deploy that is not smoke-tested is a deploy you have not verified."
+          python - <<'PY'
+          import os
+          from src import config
+          from cloudlayer.factory import get_adapter
+
+          adapter = get_adapter(config.load())
+          endpoint = os.environ["ENDPOINT_NAME"]
+          sha = os.environ["SHA"]
+          payloads = [
+              {"temp_c": 70.0, "vibration_mm_s": 5.0, "pressure_kpa": 100.0,
+               "hours_since_service": 1000.0, "load_pct": 50.0, "ambient_humidity": 50.0},
+              {"temp_c": 78.4, "vibration_mm_s": 3.1, "pressure_kpa": 315.2,
+               "hours_since_service": 4200.0, "load_pct": 68.0, "ambient_humidity": 55.0},
+              {"temp_c": 95.0, "vibration_mm_s": 9.0, "pressure_kpa": 340.0,
+               "hours_since_service": 8800.0, "load_pct": 95.0, "ambient_humidity": 70.0},
+          ]
+          for payload in payloads:
+              out = adapter.invoke(endpoint, payload)
+              assert 0.0 <= out["probability"] <= 1.0, out
+              assert out["model_version"] == sha, f"serving {out['model_version']}, expected {sha}"
+              print("ok", out)
+          print("smoke test passed: all three payloads scored by the deployed version", sha)
+          PY

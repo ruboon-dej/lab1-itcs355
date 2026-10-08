@@ -1,0 +1,6 @@
+# CD and scheduled-drift jobs only. No mlflow, so no clash with the pinned training stack.
+numpy==2.4.4
+pandas==3.0.2
+azure-ai-ml
+azure-identity
+azure-monitor-opentelemetry-exporter

@@ -1246,6 +1246,40 @@ class AzureAdapter(CloudAdapter):
     # Lab 2/3: Teardown
     # ------------------------------------------------------------------
 
+    # --- Lab 4 ---------------------------------------------------------------
+    def emit_metric(self, name: str, value: float, unit: str = "None") -> None:
+        """Send one custom metric to Application Insights (Azure Monitor).
+
+        Uses the Azure Monitor OpenTelemetry exporter with the connection string in
+        APPLICATIONINSIGHTS_CONNECTION_STRING, so a scheduled job needs no Azure login.
+        The metric appears in Log Analytics under `customMetrics`.
+        """
+        conn = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
+        if not conn:
+            raise RuntimeError(
+                "Set APPLICATIONINSIGHTS_CONNECTION_STRING to emit metrics to Azure Monitor."
+            )
+        from azure.monitor.opentelemetry.exporter import AzureMonitorMetricExporter
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+        provider = getattr(self, "_metric_provider", None)
+        if provider is None:
+            exporter = AzureMonitorMetricExporter(connection_string=conn)
+            # One-hour interval: we flush explicitly after every emit instead.
+            reader = PeriodicExportingMetricReader(exporter, export_interval_millis=3_600_000)
+            provider = MeterProvider(metric_readers=[reader])
+            self._metric_provider = provider
+            self._metric_gauges = {}
+        gauge = self._metric_gauges.get(name)
+        if gauge is None:
+            gauge = provider.get_meter("itcs355").create_gauge(
+                name, unit="" if unit == "None" else unit
+            )
+            self._metric_gauges[name] = gauge
+        gauge.set(float(value))
+        provider.force_flush()
+
     def teardown(
         self,
         tags: dict[str, str],
