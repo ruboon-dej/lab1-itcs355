@@ -32,7 +32,7 @@ PSI and KS per feature (`monitoring/drift.py`), run by `.github/workflows/drift.
 
 Observed on the simulated window: no injection → no alert; shift +1 → PSI 0.055, no alert; shift +3 → 0.122, alert; shift +6 → 0.344, alert; scale ×1.5 → 0.273, alert; scale ×2 → 0.525, alert; mix → `hours_since_service` and `load_pct` alert while `temp_c` stays at 0.046 (the hard one: the fleet changed, not the feature). KS reacts more to location shifts and PSI to spread changes.
 
-Schedule: GitHub Actions cron every 15 minutes while `DRIFT_ENABLED=true`. Score: sent to Application Insights as `drift.psi.<feature>` through `adapter.emit_metric()`. Alert: webhook to `<Slack/Discord/Telegram>` plus GitHub's failed-run email (the job exits 2 on a breach). Check delivery in Application Insights → Logs: `customMetrics | where name startswith "drift.psi" | order by timestamp desc | take 20`.
+Schedule: GitHub Actions cron every 15 minutes while `DRIFT_ENABLED=true`. Score: sent to Application Insights as `drift.psi.<feature>` through `adapter.emit_metric()`, which checks Azure's acknowledgement. Alert: webhook to `<Slack/Discord/Telegram>` plus GitHub's failed-run email (the job exits 2 on a breach). Check delivery in Application Insights → Logs: `customMetrics | where name startswith "drift.psi" | order by timestamp desc | take 20`.
 
 ### Injected drift exercise (Task 6)
 t0 (injection variable set): `<time>` · alert timestamp: `<time>` · **detection time: `<alert − t0>`** · dashboard screenshot: `<file>` · alert screenshot: `<file>`.
@@ -54,7 +54,7 @@ Before choosing "retrain": did the schema or null rate change? If so, an upstrea
 - **"Production inputs" are simulated.** The service receives no real traffic, so the current window is fresh data from the same process (a different seed per run) with a controlled shift. Detection time measures this pipeline, not a real incident.
 - **ACR admin credential:** the Lab 3 adapter enables the registry admin user and stores its password as a Container App secret. CI login is keyless, but the running app still pulls with a static credential.
 - **Requirements:** `requirements.in` does not compile as written (`mlflow==3.16.0` needs `mlflow-skinny==3.16.0`, but `azureml-mlflow` needs `<=3.15.0`, which in turn needs `pandas<3`). Left untouched; CD and drift use a separate hash-locked `requirements-ops.txt` with no mlflow.
-- **Metric delivery:** the Azure Monitor exporter retries in the background and does not report failure to the caller, so "metrics handed to the cloud exporter" in the drift log is not proof of delivery; confirm with the query above.
+- **Metric delivery:** `emit_metric` posts straight to the Application Insights ingestion endpoint and checks Azure's reply (`itemsAccepted`), so a failed delivery raises an error and shows as a warning in the drift log. The first version used the OpenTelemetry exporter, which reported success even though no data arrived (found when the `customMetrics` query came back empty), so it was replaced.
 
 ### Teardown
 Disable the drift schedule (set `DRIFT_ENABLED=false`), delete the staging Container App, run `make teardown` and `make cost-report`. `make teardown` does not remove the managed identity or its role assignments; remove those separately if not needed for later labs.

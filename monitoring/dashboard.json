@@ -15,8 +15,8 @@
       "title": "Error rate by class",
       "type": "timeseries",
       "unit": "percentunit",
-      "target": "sum by (status_class) (rate(http_requests_total{status_class=~\"4xx|5xx\"}[5m])) / sum(rate(http_requests_total[5m]))",
-      "_note": "4xx and 5xx must be split. 4xx is usually a caller problem; 5xx is yours."
+      "target": "sum by (status_class) (rate(http_requests_total{status_class=~\"4xx|5xx\"}[1m])) / on() group_left sum(rate(http_requests_total[1m]))",
+      "_note": "Share of all requests that were 4xx or 5xx. `on() group_left` is needed: the numerator has a status_class label, the denominator has none, so a plain division matches nothing."
     },
     {
       "id": 3,
@@ -42,15 +42,15 @@
       "title": "Model version in production",
       "type": "stat",
       "target": "model_version_info",
-      "_note": "During a canary you should see two. If you see two when you are not deploying, something is wrong."
+      "_note": "Shows the version label itself (the metric value is always 1)."
     },
     {
       "id": 6,
-      "title": "Input feature rolling mean (last 500 requests)",
+      "title": "Input rolling mean: temp_c (last 500 requests)",
       "type": "timeseries",
-      "unit": "short",
-      "target": "feature_rolling_mean",
-      "_note": "Feature-distribution statistic computed over a rolling window inside the service."
+      "unit": "celsius",
+      "target": "feature_rolling_mean{feature=\"temp_c\"}",
+      "_note": "Feature-distribution statistic computed inside the service over a rolling window. One feature, because features with very different scales cannot share an axis."
     }
   ]
 }
