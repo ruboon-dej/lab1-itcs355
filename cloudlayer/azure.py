@@ -1250,35 +1250,43 @@ class AzureAdapter(CloudAdapter):
     def emit_metric(self, name: str, value: float, unit: str = "None") -> None:
         """Send one custom metric to Application Insights (Azure Monitor).
 
-        Uses the Azure Monitor OpenTelemetry exporter with the connection string in
-        APPLICATIONINSIGHTS_CONNECTION_STRING, so a scheduled job needs no Azure login.
-        The metric appears in Log Analytics under `customMetrics`.
+        Posts straight to the ingestion endpoint named in
+        APPLICATIONINSIGHTS_CONNECTION_STRING and CHECKS Azure's reply, so a scheduled job needs
+        no Azure login and a failed delivery raises instead of passing silently. (The first
+        version used the OpenTelemetry exporter, which reports success even when nothing arrives.)
+        The metric shows up in Log Analytics under `customMetrics`.
         """
-        conn = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
+        import datetime
+        import requests
+
+        conn = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING", "").strip()
         if not conn:
             raise RuntimeError(
                 "Set APPLICATIONINSIGHTS_CONNECTION_STRING to emit metrics to Azure Monitor."
             )
-        from azure.monitor.opentelemetry.exporter import AzureMonitorMetricExporter
-        from opentelemetry.sdk.metrics import MeterProvider
-        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-
-        provider = getattr(self, "_metric_provider", None)
-        if provider is None:
-            exporter = AzureMonitorMetricExporter(connection_string=conn)
-            # One-hour interval: we flush explicitly after every emit instead.
-            reader = PeriodicExportingMetricReader(exporter, export_interval_millis=3_600_000)
-            provider = MeterProvider(metric_readers=[reader])
-            self._metric_provider = provider
-            self._metric_gauges = {}
-        gauge = self._metric_gauges.get(name)
-        if gauge is None:
-            gauge = provider.get_meter("itcs355").create_gauge(
-                name, unit="" if unit == "None" else unit
+        parts = dict(p.split("=", 1) for p in conn.split(";") if "=" in p)
+        ikey = parts.get("InstrumentationKey", "").strip()
+        endpoint = parts.get("IngestionEndpoint", "https://dc.services.visualstudio.com").strip()
+        if not ikey:
+            raise RuntimeError("the connection string has no InstrumentationKey")
+        envelope = {
+            "name": "Microsoft.ApplicationInsights.Metric",
+            "time": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "iKey": ikey,
+            "data": {
+                "baseType": "MetricData",
+                "baseData": {"ver": 2, "metrics": [{"name": name, "value": float(value)}]},
+            },
+        }
+        response = requests.post(endpoint.rstrip("/") + "/v2/track", json=[envelope], timeout=15)
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        if response.status_code != 200 or body.get("itemsAccepted") != 1:
+            raise RuntimeError(
+                f"Application Insights did not accept the metric: HTTP {response.status_code} {body}"
             )
-            self._metric_gauges[name] = gauge
-        gauge.set(float(value))
-        provider.force_flush()
 
     def teardown(
         self,

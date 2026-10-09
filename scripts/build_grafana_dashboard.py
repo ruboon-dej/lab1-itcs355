@@ -12,18 +12,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "monitoring" / "dashboard.json"
 OUT = ROOT / "monitoring" / "grafana" / "dashboards" / "itcs355.json"
-LEGEND = {"status_class": "{{status_class}}", "version": "{{version}}", "feature": "{{feature}}"}
-
-
 def _legend(expr: str) -> str:
-    for label, template in LEGEND.items():
-        if label in expr or expr in ("model_version_info", "drift_psi", "feature_rolling_mean"):
-            if expr == "model_version_info":
-                return LEGEND["version"]
-            if expr in ("drift_psi", "feature_rolling_mean"):
-                return LEGEND["feature"]
-            if label == "status_class":
-                return template
+    """Series name shown in the legend (and, for stat panels, as the displayed text)."""
+    if "status_class" in expr:
+        return "{{status_class}}"
+    if expr.startswith("model_version_info"):
+        return "{{version}}"
+    if expr.startswith(("drift_psi", "feature_rolling_mean")):
+        return "{{feature}}"
     return ""
 
 
@@ -33,7 +29,7 @@ def main() -> int:
     for i, p in enumerate(spec["panels"]):
         exprs = p.get("targets") or [p["target"]]
         names = ["p50", "p95", "p99"] if len(exprs) == 3 else [None] * len(exprs)
-        panels.append({
+        panel = {
             "id": p["id"],
             "type": p["type"],
             "title": p["title"],
@@ -46,7 +42,11 @@ def main() -> int:
                  "instant": p["type"] == "stat"}
                 for j, e in enumerate(exprs)
             ],
-        })
+        }
+        if p["type"] == "stat":  # show the series NAME (the version label), not the value 1
+            panel["options"] = {"textMode": "name", "colorMode": "none", "graphMode": "none",
+                                "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}}
+        panels.append(panel)
     dashboard = {
         "uid": "itcs355", "title": spec["title"], "refresh": spec.get("refresh", "30s"),
         "schemaVersion": 39, "time": {"from": "now-30m", "to": "now"}, "panels": panels,

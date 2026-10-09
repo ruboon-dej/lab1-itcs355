@@ -42,7 +42,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "Error rate by class",
-      "description": "4xx and 5xx must be split. 4xx is usually a caller problem; 5xx is yours.",
+      "description": "Share of all requests that were 4xx or 5xx. `on() group_left` is needed: the numerator has a status_class label, the denominator has none, so a plain division matches nothing.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -62,7 +62,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (status_class) (rate(http_requests_total{status_class=~\"4xx|5xx\"}[5m])) / sum(rate(http_requests_total[5m]))",
+          "expr": "sum by (status_class) (rate(http_requests_total{status_class=~\"4xx|5xx\"}[1m])) / on() group_left sum(rate(http_requests_total[1m]))",
           "legendFormat": "{{status_class}}",
           "instant": false
         }
@@ -144,7 +144,7 @@
       "id": 5,
       "type": "stat",
       "title": "Model version in production",
-      "description": "During a canary you should see two. If you see two when you are not deploying, something is wrong.",
+      "description": "Shows the version label itself (the metric value is always 1).",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -168,13 +168,25 @@
           "legendFormat": "{{version}}",
           "instant": true
         }
-      ]
+      ],
+      "options": {
+        "textMode": "name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
     },
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Input feature rolling mean (last 500 requests)",
-      "description": "Feature-distribution statistic computed over a rolling window inside the service.",
+      "title": "Input rolling mean: temp_c (last 500 requests)",
+      "description": "Feature-distribution statistic computed inside the service over a rolling window. One feature, because features with very different scales cannot share an axis.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -187,14 +199,14 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "celsius"
         },
         "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "feature_rolling_mean",
+          "expr": "feature_rolling_mean{feature=\"temp_c\"}",
           "legendFormat": "{{feature}}",
           "instant": false
         }

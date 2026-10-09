@@ -132,7 +132,7 @@ def main() -> int:
             adapter = get_adapter(config.load(strict=False))
             for r in results:
                 adapter.emit_metric(f"drift.psi.{r.feature}", r.psi)
-            print("metrics handed to the cloud exporter (delivery is confirmed in the provider, not here)")
+            print("metrics accepted by the cloud provider")
         except Exception as exc:  # noqa: BLE001
             print(f"WARNING  metric emit failed: {exc}")
 
