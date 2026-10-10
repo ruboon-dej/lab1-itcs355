@@ -845,13 +845,15 @@ Each item says what the lab asked for, what I did instead and why.
 
 ### Cost and teardown
 
-The staging app is created with a minimum of zero replicas, so idle time costs almost nothing. The container registry is billed per day whether or not it is used. Actual spend for the resource group over the lab, from Azure Cost analysis: `<ACT>` THB, against `BUDGET_LIMIT_THB=800`. I did not run `make cost-report`: it is the Lab 5 scaffold, it overwrites `reports/lab5-cost.md` and needs estimate and billing figures that belong to Lab 5.
+The staging app is created with a minimum of zero replicas, so idle time costs almost nothing. The container registry is billed per day whether or not it is used. Actual spend for the resource group on Oct 8 to 9 (Azure Cost analysis, below): **US$0.33**, of which the container registry was US$0.31, the Container Apps about US$0.02, and the Log Analytics workspaces and storage account US$0.00. The portal budget for the group is US$25 a month (about the 800 THB course budget). I did not run `make cost-report`: it is the Lab 5 scaffold, it overwrites `reports/lab5-cost.md` and needs estimate and billing figures that belong to Lab 5.
+
+![Azure Cost analysis for the resource group, Oct 8 to 9](docs/lab4/12-cost-analysis.png)
 
 Teardown, performed after the last deploy:
 
 - `ENDPOINT_NAME=itcs355-6688022-staging make teardown` deletes the tagged Azure ML jobs and compute and the staging Container App; the output is saved in `reports/lab4-teardown-log.txt`.
 - The `regtest` app left over from Lab 3 was deleted.
-- The drift schedule is switched off twice over: `DRIFT_ENABLED=false`, and the Drift workflow is disabled in the Actions tab, so nothing keeps invoking a deleted endpoint.
+- The drift schedule is switched off twice over: `DRIFT_ENABLED=false`, and the Drift workflow is disabled in the Actions tab, so nothing keeps invoking a deleted endpoint. The CD workflow is disabled after the final merge, so no later push can recreate the staging app.
 - The Discord webhook was deleted, because its URL had been pasted into a chat during setup.
 
 ### Reproduce Lab 4 locally
