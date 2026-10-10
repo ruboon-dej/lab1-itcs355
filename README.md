@@ -661,3 +661,211 @@ The intended concurrent canary traffic split could not be completed because the 
 
 This limitation is documented explicitly rather than presenting an unsupported 90/10 canary as successfully completed.
 
+
+---
+
+## Lab 4 — CI/CD, Observability, and Drift
+
+Lab 4 turns the commit-to-deployment path into an automated pipeline, instruments the running service, and proves that the checks work by breaking things on purpose. Everything below is backed by a screenshot or a log under `docs/lab4/`. Where the Azure for Students subscription or the university tenant blocked the intended approach, the substitution and its justification are listed in [Substitutions and limitations](#substitutions-and-limitations).
+
+| Deliverable | Status | Evidence |
+|---|---|---|
+| Unit, data-contract, model-behaviour and integration tests | Done | `tests/`, CI run below |
+| CI: lint, tests, build, integration test, images tagged by commit SHA | Done | [CI run](https://github.com/ruboon-dej/lab1-itcs355/actions/runs/37764248231) |
+| CD to staging, main only, only after green CI, no stored Azure key | Done, with one substitution (S6) | [CD run](https://github.com/ruboon-dej/lab1-itcs355/actions/runs/37764818678) |
+| Blocked bad commit | Done | [PR #6](https://github.com/ruboon-dej/lab1-itcs355/pull/6), [failing run](https://github.com/ruboon-dej/lab1-itcs355/actions/runs/37796025255) |
+| Dashboard with the five required signals | Done, local (S3) | screenshots below |
+| SLO with target, window and error-budget response | Done | `monitoring/slo.yaml` |
+| Scheduled drift detector, justified threshold, alert to a channel I see | Done, with substitutions (S2, S4) | [Drift detection](#drift-detection-task-5) |
+| Injected drift: alert, timestamps, detection time | Done: on-demand measured; scheduled run did not fire (see finding) | [Injected drift](#injected-drift-exercise-task-6) |
+| Five-line post-mortem | Done | below |
+| Teardown | Done | [Teardown](#cost-and-teardown) |
+
+### 1. Tests (Task 1)
+
+Four categories, run cheapest first in CI so a schema mistake fails in seconds rather than after a build.
+
+| Category | Tests | Production incident the test would have caught |
+|---|---|---|
+| Data contract | `test_schema_columns_present_and_typed` | an upstream team renames, drops or retypes a column |
+| Data contract | `test_no_nulls_in_required_columns` | a sensor outage or a broken join starts filling features with nulls |
+| Data contract | `test_features_within_plausible_ranges` | a unit change (°C to °F) or a stuck sensor |
+| Data contract | `test_target_is_binary_and_not_degenerate` | the labelling job breaks and every row gets the same label |
+| Data contract | `test_identifier_is_unique` | a duplicated ingestion batch |
+| Data contract | `test_no_machine_leaks_across_splits` | leakage: one machine in both train and test inflates the metric |
+| Model behaviour | `test_predictions_are_valid_probabilities`, `test_known_healthy_machine_scores_low`, `test_risk_increases_with_wear`, `test_model_is_not_constant` | a retrained model that is broken but still "passes" the headline metric |
+| Model behaviour | `test_prediction_latency_within_budget` | a model change that makes inference too slow |
+| Service / observability | `tests/test_service.py`, `tests/test_metrics.py` | `/predict` or `/metrics` breaking, and 4xx errors being counted as 5xx |
+| Integration | CI builds the serving image, starts the container, calls `/predict` and checks the response and model version | an image that builds but does not serve |
+
+The latency budget is 50 ms per single prediction. It is a quarter of the 200 ms p95 target in `loadtest/k6.js`, which leaves the rest for network, JSON handling and queueing. Inference measures about 5 ms here, so there is roughly ten times headroom for a slow CI runner.
+
+### 2. CI/CD pipeline (Task 2)
+
+```mermaid
+flowchart LR
+    PR["pull request / push to main"] --> L["lint + portability audit"] --> C["data contract tests"] --> B["model behaviour tests"]
+    B --> S["service + metrics tests"] --> I["build images, integration test"]
+    I --> G{"green, and on main?"}
+    G -->|no| X["stop: nothing ships"]
+    G -->|yes| CD["CD: rebuild image tagged by commit SHA, push, deploy to staging, smoke test"]
+```
+
+- `ci.yml` runs on every pull request and on pushes to main. Documentation-only pushes to main (README, `docs/`, `reports/*.md`, `reports/*.txt`) are skipped, because CD follows CI and would otherwise redeploy staging after a pure text change.
+- `cd.yml` starts only when CI succeeded on main and runs only through the `staging` GitHub environment. It checks out the exact commit CI tested, rebuilds the serving image tagged with that commit SHA (never `latest`), pushes it, deploys to Azure Container Apps (environment `itcs355-itcs355-6688022-cae`) and runs a smoke test: three known payloads, each of which must return a probability in [0, 1] and a `model_version` equal to the commit SHA.
+
+![CI green on main](docs/lab4/01-ci-green-main.png)
+
+![CD: all steps green, including the smoke test](docs/lab4/02-cd-staging-green.png)
+
+**Credentials, no stored key.** CD logs in to Azure with OIDC federation. The usual route needs an Entra app registration, and `az ad app create` fails in the university tenant with `Insufficient privileges`. I used a user-assigned managed identity (`itcs355-gh-deploy`) with a GitHub federated credential instead, with `AcrPush` on the registry and `Contributor` on the resource group only. The first login failed with `AADSTS700213: No matching federated identity record`: GitHub now presents the repository by numeric ids (`repo:ruboon-dej@72783235/lab1-itcs355@1359732448:environment:staging`), so the credential subject has to use that form.
+
+**Why CD does not call `adapter.deploy()`.** That method creates the app with a public image, saves the registry login in a separate command, then switches to the private image. In this subscription the app's registry list stayed empty (`registries: null`) and Azure refused the pull with `Authentication failed when pulling container image ... Provide registryCredentials or managedIdentityClientId`. Controls I ran: the registry admin credentials returned HTTP 200 and could read the image; my Lab 3 `regtest` app in the same environment ran the same registry and credentials fine; and a throwaway app created with the registry login inside `az containerapp create` pulled the image successfully. I did not find out why the separate step does not persist. CD therefore creates the app with the login inside the create command (and recreates the staging app if an in-place update fails, since staging is disposable).
+
+### 3. Blocked bad commit (Task 3)
+
+[PR #6](https://github.com/ruboon-dej/lab1-itcs355/pull/6) renames one column in `scripts/make_dataset.py` (`vibration_mm_s` to `vibration_mm_sec`). The [CI run](https://github.com/ruboon-dej/lab1-itcs355/actions/runs/37796025255) failed at "Data contract tests": `test_schema_columns_present_and_typed` fails with `missing columns: ['vibration_mm_s']`, and two more tests fail with `KeyError` because the column is gone (3 failed, 7 passed). The behaviour tests, the service tests and the image build were skipped, and GitHub shows "This branch has not been deployed". No CD run exists for the PR. The PR was closed without merging.
+
+![PR #6: one failing check, build skipped](docs/lab4/03-bad-commit-pr6.png)
+
+![The failing contract tests and the error message](docs/lab4/04-bad-commit-failing-tests.png)
+
+![Actions list: CI failed on the PR, and no CD run was triggered for it](docs/lab4/05-actions-no-cd-for-pr.png)
+
+### 4. Dashboard (Task 4)
+
+Prometheus and Grafana run locally (`docker compose -f monitoring/docker-compose.yml up -d`); the dashboard is code. `monitoring/dashboard.json` is the single source and `scripts/build_grafana_dashboard.py` generates the Grafana file. The service exposes `/metrics`: request counts split by 4xx and 5xx, a latency histogram, the model version, and the rolling mean of every input feature over the last 500 requests.
+
+| Required signal | Panel |
+|---|---|
+| Request rate | "Request rate" |
+| Error rate split 4xx / 5xx | "Error rate by class" |
+| Latency p50, p95, p99 | "Latency p50 / p95 / p99" |
+| Feature-distribution statistic over a rolling window | "Input rolling mean: temp_c (last 500 requests)" |
+| Model version in production | "Model version in production" |
+| Drift (extra) | "Feature drift (PSI per feature)" |
+
+![Dashboard: request rate, error rate by class, latency percentiles, feature drift](docs/lab4/06-dashboard-top.png)
+
+![Dashboard: model version and the temp_c rolling mean](docs/lab4/07-dashboard-bottom.png)
+
+How to read it. The 4xx line reaches 100% only in the gaps between load tests, when my deliberately malformed requests were the only traffic; during the k6 runs it sits near 5%. The latency percentiles come from histogram buckets, so p95 reads higher (about 48 ms) than the exact 35 ms k6 reports. The steps and the drop in the `temp_c` rolling mean are two replays of 500 shifted rows with a normal k6 run between them, which refilled the window with normal traffic. The PSI points come from `monitoring/drift.py --pushgateway`. Bugs I found in the starter dashboard and fixed: the error-rate query divided a labelled series by an unlabelled one, so it always returned no data (it now uses `on() group_left`), and the version panel showed the metric value `1` instead of the version label.
+
+### 5. SLO
+
+`monitoring/slo.yaml` sets three objectives, each with a response when the budget is spent.
+
+| Objective | Target | When the budget is spent |
+|---|---|---|
+| Availability | 0.99 over 30 days. Not higher: the app runs one replica scaling to zero, so a higher promise is one the architecture cannot keep. | Freeze deploys except fixes. If the burn followed a deploy, redeploy the previous SHA-tagged image. Otherwise raise the replica counts and accept the cost. If 0.99 still cannot hold, revise the target in writing. |
+| Latency | p95 under 200 ms (matches `loadtest/k6.js`). Honest status: Lab 3 measured 233 ms at 1 VU, so this objective is **not currently met**. | Compare p95 with p99 to separate cold starts from general slowness, raise CPU, re-run the load test, and only then revise the target with a recorded reason. |
+| Freshness | Model no older than 30 days | Retrain, but only after the drift post-mortem check; the Lab 5 retraining trigger must fire at or before 30 days. |
+
+### Drift detection (Task 5)
+
+`monitoring/drift.py` computes PSI and KS per feature against the training reference and exits with code 2 when any feature exceeds the threshold. `.github/workflows/drift.yml` runs it on a schedule and on demand. The "recent window" is simulated: 500 fresh rows from the same generator with a different seed per run, optionally with an injected shift (S5). Each score goes to Azure Monitor as `drift.psi.<feature>`; a breach posts to a Discord channel and fails the run, which makes GitHub email me too. A repository variable `DRIFT_ENABLED` is a kill switch for scheduled runs.
+
+**Threshold 0.09, with a reason.** A threshold copied from a tutorial says nothing about my feature volumes, and PSI is biased upward on small windows. `scripts/calibrate_drift_threshold.py` generated 200 fresh datasets from the same process, took 500-row windows, and computed PSI against the reference for all six features. The detector alerts when any feature crosses the line, so the relevant statistic is the maximum across features in each trial: median 0.046, 99th percentile 0.0895, rounded up to 0.09 (`monitoring/drift_threshold.json`). That allows about one false alarm per 100 checks. The conventional 0.10 and 0.25 come from credit scoring with large stable volumes; at this window 0.25 would miss real shifts. On a 500-row window:
+
+| Injection into `temp_c` | PSI | Alert at 0.09? |
+|---|---|---|
+| none | 0.041 | no |
+| shift +1 | 0.055 | no |
+| shift +3 | 0.122 | yes |
+| shift +6 | 0.344 | yes |
+| spread x1.5 | 0.273 | yes |
+| spread x2 | 0.525 | yes |
+| mix of machines | `temp_c` 0.046; `hours_since_service` and `load_pct` alert instead | yes |
+
+The mix change is the hard one: the fleet changed, not a sensor, and a single-feature view of `temp_c` would have missed it.
+
+**The scores reach Azure Monitor.** Query of the Application Insights workspace (`AppMetrics`, `drift.psi.temp_c`), one reading per drift run:
+
+```text
+TimeGenerated (UTC)           psi      run
+2026-10-08T20:38:08Z          0.50491  #2 manual, shift +6
+2026-10-08T21:30:04Z          0.01722  #3 scheduled, no injection
+2026-10-09T01:20:22Z          0.05981  #4 scheduled, no injection
+2026-10-09T03:45:57Z          0.30588  #5 manual, shift +6
+2026-10-09T07:35:07Z          0.03742  #6 scheduled, no injection
+```
+
+### Injected drift exercise (Task 6)
+
+I injected a +6 °C shift in `temp_c` (mean about 80 to 86). Both alerts reached the Discord channel I use; the run log shows the PSI table, `metrics accepted by the cloud provider`, and the alert.
+
+![Drift run log: temp_c significant, the other five stable, alert raised](docs/lab4/10-drift-run-log.png)
+
+![Discord alert, run #2](docs/lab4/08-drift-alert-discord-1.png)
+
+![Discord alert, run #5](docs/lab4/09-drift-alert-discord-2.png)
+
+| Run | Trigger | Started (local, UTC+7) | Injection | `temp_c` PSI | Alert |
+|---|---|---|---|---|---|
+| #1 | schedule | Oct 8, 23:39 | n/a | n/a | skipped by the kill switch (`DRIFT_ENABLED` was not yet set) |
+| [#2](https://github.com/ruboon-dej/lab1-itcs355/actions/runs/37840856830) | manual | 03:37 | shift +6 | 0.505 | Discord at 03:38:12 |
+| #3 | schedule | 04:29 | none | 0.017 | green |
+| #4 | schedule | 08:19 | none | 0.060 | green |
+| [#5](https://github.com/ruboon-dej/lab1-itcs355/actions/runs/37880722709) | manual | 10:45 | shift +6 | 0.306 | Discord at 10:46:01 |
+| #6 | schedule | 14:34 | none | 0.037 | green |
+
+![Drift run list: manual and scheduled runs](docs/lab4/11-drift-run-list.png)
+
+**Detection time, measured two ways.**
+
+- **On demand:** about 45 to 70 seconds from the start of a run to the Discord message (run #5 about 45 s, run #2 about 70 s, including roughly 20 s of dependency installation). This is the speed of the detector itself.
+- **On the schedule:** the cron asks for every 15 minutes, but GitHub started the scheduled runs at 04:29, 08:19 and 14:34, gaps of 3 h 50 min and 6 h 15 min. I then switched the shift on with the schedule enabled (after 15:33; I did not record the exact time) and watched for a scheduled run. None had started by 21:09, so the scheduled detection time is **more than 5 hours 30 minutes and was not observed**. GitHub treats scheduled workflows as best-effort, so a 15-minute schedule on GitHub Actions cannot be relied on. A real deployment needs a proper scheduler (Azure Container Apps Job, Azure ML schedule or another cloud timer), which my subscription could not provide (S2).
+- **False alarms:** none. The three scheduled runs on unchanged data scored 0.017, 0.060 and 0.037, all under 0.09.
+
+**Five-line post-mortem**
+
+```
+What fired: PSI alert on temp_c: PSI 0.31 to 0.50 (KS 0.26 to 0.32) against the 0.09 threshold; the other five features stayed below PSI 0.06.
+True cause: the exercise's injected +6 °C shift in temp_c (mean about 80 to 86) from scripts/inject_drift.py. A simulated sensor offset, not a real event. Only values changed, so schema and null rates were unchanged.
+Retrain, roll back, or no action: No retrain, no rollback. One feature moved and five are stable, which points to a single source (sensor calibration, a unit change, an upstream bug) rather than a changed world. Retraining on it would bake the offset into the model, so first confirm with the data's producer, and retrain only if the shift is real and persists. Measured impact is small: AUC is unchanged (0.860 to 0.859).
+What this would have cost if unnoticed for a week: Ranking quality is unchanged, but the model over-predicts risk: mean predicted failure probability rises 13% (0.115 to 0.129), and 19% more machines are flagged at p >= 0.3 (53 to 63 per 500 readings, about one extra unnecessary inspection per 50 readings). Measured with the registered model on one simulated 500-row window. Assuming 1,000 readings a day (7,000 a week), that is roughly 140 extra inspections a week.
+How to prevent or detect it faster: check every incoming batch instead of relying on a timer that can lag by hours, add a per-feature range and null check on production inputs so pipeline breakage is told apart from real drift, and send alerts that name the sensor and its owner.
+```
+
+### Substitutions and limitations
+
+Each item says what the lab asked for, what I did instead and why.
+
+- **S1: federated login through a managed identity, not an Entra app registration.** The tenant refuses app registrations (`Insufficient privileges`). A managed identity gives the same keyless GitHub-to-Azure login and needs only Azure RBAC on my own resource group.
+- **S2: the schedule is GitHub Actions cron, not an Azure scheduler.** An Azure ML schedule needs compute and Azure for Students does not allow VM compute quota requests (Lab 2 hit the same limit). Cost: the timer is unreliable, as measured above, and the job runs outside Azure, which is why its results go to Azure Monitor.
+- **S3: the dashboard is local Prometheus and Grafana against a locally served model.** The handout allows this and it keeps the dashboard as committed code. The Azure app scales to zero and is torn down after the lab, so a dashboard pointed at it would have nothing to show. The model-version panel therefore shows `local-demo`; the deployed version is verified by the CD smoke test, which compares it with the commit SHA.
+- **S4: the alert goes to a Discord webhook.** The handout lists email, Slack and Line Notify. Line Notify was shut down on 31 March 2025, and Discord needs no app registration. It is a channel I actually see, and the failed run also emails me.
+- **S5: production inputs are simulated.** The service receives no real traffic, so the drift window is fresh data from the same generator with a controlled shift. Detection times therefore measure this pipeline, not a real incident.
+- **S6: CD creates the staging app with `az containerapp create`, not `adapter.deploy()`.** Evidence is in the CD section above. Image push still uses the adapter.
+- **S7: rollback means redeploying the previous SHA-tagged image.** The Lab 3 traffic-split rollback could not run (`ExpressEnvironmentFeatureNotSupported`), and images in the registry are immutable, so redeploying a previous tag is the recovery path I can actually exercise.
+- **L1: the registry admin credential.** Creating the app stores the registry's admin password as a Container App secret. CI login is keyless, but the running app still pulls with a static credential.
+- **L2: `requirements.in` does not compile as written.** `mlflow==3.16.0` needs `mlflow-skinny==3.16.0`, while `azureml-mlflow` needs `<=3.15.0`, which in turn needs `pandas<3`. I left the training stack alone; CD and the drift job use a separate hash-locked `requirements-ops.txt` with no mlflow.
+- **L3: the metric sender was replaced.** The first version used the OpenTelemetry exporter, which does not report a failed delivery to the caller, so success could not be confirmed. It was replaced by a direct post to the Application Insights ingestion endpoint that checks Azure's acknowledgement; the data points above arrived this way.
+- **L4: metrics and the dashboard are not the Azure endpoint's.** The drift scores are in Azure Monitor, but request metrics exist only for the local service (S3).
+
+### Cost and teardown
+
+The staging app is created with a minimum of zero replicas, so idle time costs almost nothing. The container registry is billed per day whether or not it is used. Actual spend for the resource group over the lab, from Azure Cost analysis: `<ACT>` THB, against `BUDGET_LIMIT_THB=800`. I did not run `make cost-report`: it is the Lab 5 scaffold, it overwrites `reports/lab5-cost.md` and needs estimate and billing figures that belong to Lab 5.
+
+Teardown, performed after the last deploy:
+
+- `ENDPOINT_NAME=itcs355-6688022-staging make teardown` deletes the tagged Azure ML jobs and compute and the staging Container App; the output is saved in `reports/lab4-teardown-log.txt`.
+- The `regtest` app left over from Lab 3 was deleted.
+- The drift schedule is switched off twice over: `DRIFT_ENABLED=false`, and the Drift workflow is disabled in the Actions tab, so nothing keeps invoking a deleted endpoint.
+- The Discord webhook was deleted, because its URL had been pasted into a chat during setup.
+
+### Reproduce Lab 4 locally
+
+```bash
+make data && pytest -q tests/ && ruff check src/ service/ monitoring/ scripts/ tests/
+python scripts/calibrate_drift_threshold.py --window 500 --trials 200      # threshold evidence
+docker compose -f monitoring/docker-compose.yml up -d                       # Prometheus, Pushgateway, Grafana
+MODEL_PATH=reports/deploy-model/model.joblib MODEL_VERSION=local-demo uvicorn service.app:app --port 8080 --workers 1
+k6 run -e TARGET=http://127.0.0.1:8080/predict -e VUS=5 -e DURATION=60s loadtest/k6.js
+python scripts/make_dataset.py --seed 5 --out data/fresh.csv
+python scripts/make_window.py --source data/fresh.csv --n 500 --out data/window.csv
+python scripts/inject_drift.py --source data/window.csv --out data/current.csv --feature temp_c --mode shift --magnitude 6
+python -m monitoring.drift --current data/current.csv --threshold 0.09 --pushgateway localhost:9091
+```
+
+Open `http://localhost:3000` for the dashboard. Use one uvicorn worker: Prometheus counters are per process.

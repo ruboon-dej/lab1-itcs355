@@ -9,6 +9,13 @@ on:
   pull_request:
   push:
     branches: [main]
+    # Documentation-only pushes to main must not trigger CI, because CD follows CI and would
+    # redeploy (or re-create) the staging app. Pull requests are always checked in full.
+    paths-ignore:
+      - "README.md"
+      - "docs/**"
+      - "reports/*.md"
+      - "reports/*.txt"
 
 permissions:
   contents: read
