@@ -1,0 +1,12 @@
+all top-level jobs, newest 14:
+  2026-10-17 10:13:02  FAILED     CreatedByType.USER  itcs355-lab5-condition-test        dynamic_stem_10spjkl4s7
+  2026-10-17 10:19:45  FAILED     CreatedByType.USER  itcs355-lab5-condition-test        amiable_okra_x6n2nv4jn9
+  2026-10-17 11:09:30  FAILED     CreatedByType.USER  itcs355-lab5-retrain               zen_kitchen_d4d5nj9ldl
+  2026-10-17 12:13:02  COMPLETED  CreatedByType.USER  itcs355-lab5-retrain               hungry_avocado_7crzqlp0ts
+  2026-10-17 12:22:36  FAILED     CreatedByType.USER  itcs355-lab5-retrain               yellow_clock_39rf8d6wvf
+  2026-10-17 12:36:04  FAILED     CreatedByType.USER  itcs355-lab5-retrain               cyan_roti_v5v1sp97tn
+  2026-10-17 15:05:54  FAILED     CreatedByType.USER  itcs355-lab5-retrain               loyal_answer_vt066hgc01
+  2026-10-17 15:33:37  FAILED     CreatedByType.USER  itcs355-lab5-retrain               tidy_basil_460nzg1p1z
+  2026-10-17 16:01:28  FAILED     CreatedByType.USER  itcs355-lab5-retrain               amusing_quill_l5n1w06l3c
+  2026-10-17 20:07:20  FAILED     CreatedByType.USER  itcs355-lab5-retrain               great_stick_4hhw4jj276
+  2026-10-17 20:21:33  FAILED     CreatedByType.USER  itcs355-lab5-test-20261017T202131Z itcs355-lab5-test-08584093383928775710594991598CU58
