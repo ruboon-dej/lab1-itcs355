@@ -1,4 +1,8 @@
-"""Cheap proof that the conditional node routes (about 2 minutes of compute).
+"""Kept as evidence of the first attempt: an Azure ML if_else node needs the control output to be
+written to run history (mlflow + azureml-mlflow in the step image). Our hash-locked images do not
+carry those, so the IfElse node fails. The real pipeline enforces the gate in register_model.py.
+
+Cheap proof of the attempt (about 2 minutes of compute).
 
     python scripts/pipeline_condition_test.py --flag True  --wait   # yes_branch runs, no_branch skipped
     python scripts/pipeline_condition_test.py --flag False --wait   # no_branch runs, yes_branch skipped
@@ -33,7 +37,7 @@ def main() -> int:
                                  c["idle_seconds"])
         print(f"compute {name} ready")
     job = pipelines.compile_condition_test(args.flag)
-    created = pipelines.submit(job, "itcs355-lab5-condition-test")
+    created = pipelines.submit(job, "itcs355-lab5-condition-test", skip_validation=True)
     print(f"submitted {created.name}\n{created.studio_url}")
     if args.wait:
         print(f"final status: {pipelines.wait(created.name, timeout_s=900)}")

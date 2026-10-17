@@ -1,0 +1,35 @@
+Class AutoDeleteSettingSchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class AutoDeleteConditionSchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class BaseAutoDeleteSettingSchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class IntellectualPropertySchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class ProtectionLevelSchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class BaseIntellectualPropertySchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+submitted amiable_okra_x6n2nv4jn9
+https://ml.azure.com/runs/amiable_okra_x6n2nv4jn9?wsid=/subscriptions/28cbf7ce-87e6-43eb-9461-0c09ee7b247e/resourcegroups/itcs355-6688022/workspaces/itcs355-6688022-ws&tid=9bc585f9-a8b8-431c-9013-efa7b2b40cdf
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.NOT_STARTED
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.RUNNING
+  pipeline amiable_okra_x6n2nv4jn9: JobStatus.FAILED
+  step statuses:
+    d                                          Completed
+    IfElse                                     Failed
+final status: JobStatus.FAILED

@@ -4,8 +4,11 @@ pipeline/pipeline.yaml is the neutral spec; this module turns it into an Azure M
 Step logic stays in the images: every step is `cd /app && python ...` on one of two images
 (train image for ingest/validate/train, ops image for gate/register).
 
-The gate is a real branch: the gate step writes a boolean control output and the register
-step sits behind condition(). A rejected candidate leaves register not started.
+The gate is enforced in code: the gate step writes decision.json and the register step reads it,
+registering only when passed is true. A rejected candidate leaves the registry unchanged and the
+register step logs "NOT REGISTERED". (An Azure ML if_else node was tried first; it needs mlflow and
+azureml-mlflow inside the step image to report the control output, which the hash-locked images
+do not carry. See compile_condition_test, kept as evidence of that attempt.)
 """
 import os
 import subprocess
@@ -58,8 +61,7 @@ def compile_azure(spec: Optional[dict] = None, overrides: Optional[dict] = None,
                   imgs: Optional[dict] = None, compute_name: Optional[str] = None):
     """Build (do not submit) the Azure ML pipeline job."""
     from azure.ai.ml import Input, Output, command, dsl
-    from azure.ai.ml.dsl._condition import condition
-    from azure.ai.ml.entities import CommandComponent, Environment
+    from azure.ai.ml.entities import Environment
 
     from src import config
 
@@ -93,7 +95,8 @@ def compile_azure(spec: Optional[dict] = None, overrides: Optional[dict] = None,
     train_c = command(
         name="train", display_name="train",
         command="cd /app && test -f ${{inputs.contract}}/contract.txt "
-                "&& MLFLOW_TRACKING_URI=sqlite:////tmp/mlflow.db python -m src.train "
+                "&& env -u MLFLOW_RUN_ID -u MLFLOW_EXPERIMENT_ID -u MLFLOW_EXPERIMENT_NAME "
+                "MLFLOW_TRACKING_URI=sqlite:////tmp/mlflow.db python -m src.train "
                 "--data-path ${{inputs.data}}/sensors.csv --n-estimators ${{inputs.n_estimators}} "
                 "--max-depth ${{inputs.max_depth}} --min-samples-leaf ${{inputs.min_samples_leaf}} "
                 "--seed ${{inputs.model_seed}} --metrics-out ${{outputs.model_dir}}/metrics.json",
@@ -103,19 +106,18 @@ def compile_azure(spec: Optional[dict] = None, overrides: Optional[dict] = None,
         outputs={"model_dir": Output(type="uri_folder")},
         environment=train_env, environment_variables=env_vars)
 
-    gate_c = CommandComponent(
+    gate_c = command(
         name="gate", display_name="evaluation gate",
         command="cd /app && python scripts/evaluation_gate.py --pipeline-mode --provider azure "
                 "--model-name $MODEL_REGISTRY_NAME --compare-stage production "
                 "--metrics ${{inputs.model_dir}}/metrics.json --metric val_roc_auc "
                 "--floor ${{inputs.floor}} --margin ${{inputs.margin}} "
                 "--allow-bootstrap ${{inputs.allow_bootstrap}} "
-                "--decision-out ${{outputs.decision}}/decision.json --control-out ${{outputs.go}}",
+                "--decision-out ${{outputs.decision}}/decision.json",
         inputs={"model_dir": Input(type="uri_folder"), "floor": Input(type="number"),
                 "margin": Input(type="number"), "allow_bootstrap": Input(type="string")},
-        outputs={"decision": Output(type="uri_folder"),
-                 "go": Output(type="boolean", is_control=True)},
-        environment=ops_env)
+        outputs={"decision": Output(type="uri_folder")},
+        environment=ops_env, environment_variables=env_vars)
 
     register_c = command(
         name="register", display_name="register (only if gate passed)",
@@ -136,11 +138,9 @@ def compile_azure(spec: Optional[dict] = None, overrides: Optional[dict] = None,
                       min_samples_leaf=min_samples_leaf, model_seed=model_seed)
         gate = gate_c(model_dir=trn.outputs.model_dir, floor=floor, margin=margin,
                       allow_bootstrap=allow_bootstrap)
-        gate.environment_variables = env_vars
         reg = register_c(model_dir=trn.outputs.model_dir, decision=gate.outputs.decision)
         for node in (ing, val, trn, gate, reg):
             node.set_limits(timeout=timeout)
-        condition(gate.outputs.go, true_block=reg)
 
     job = retrain(**{k: params[k] for k in (
         "data_seed", "model_seed", "n_estimators", "max_depth", "min_samples_leaf",
@@ -193,10 +193,18 @@ def compile_for(provider: str, **kwargs):
     return job
 
 
-def submit(job, experiment: str):
+def submit(job, experiment: str, skip_validation: bool = False):
     from cloudlayer import azure_ops
 
-    return azure_ops.ml_client().jobs.create_or_update(job, experiment_name=experiment)
+    # azure-ai-ml 1.35: the local schema check rejects an if_else node inside a PipelineJob and then
+    # crashes formatting the error (KeyError: 0). Only the condition test needs the bypass.
+    return azure_ops.ml_client().jobs.create_or_update(
+        job, experiment_name=experiment, skip_validation=skip_validation)
+
+
+def _norm(status) -> str:
+    """SDK statuses arrive as 'JobStatus.FAILED' or an enum; return 'Failed', 'Completed', ..."""
+    return str(getattr(status, "value", status)).split(".")[-1].strip().capitalize()
 
 
 def wait(name: str, timeout_s: int = 1800, poll_s: int = 20) -> str:
@@ -206,12 +214,12 @@ def wait(name: str, timeout_s: int = 1800, poll_s: int = 20) -> str:
     deadline = time.time() + timeout_s
     status = ""
     while time.time() < deadline:
-        status = client.jobs.get(name).status
+        status = _norm(client.jobs.get(name).status)
         print(f"  pipeline {name}: {status}")
-        if status in ("Completed", "Failed", "Canceled", "NotResponding"):
+        if status in ("Completed", "Failed", "Canceled", "Cancelled", "Notresponding"):
             break
         time.sleep(poll_s)
     print("  step statuses:")
     for child in client.jobs.list(parent_job_name=name):
-        print(f"    {child.display_name or child.name:<42} {child.status}")
+        print(f"    {child.display_name or child.name:<42} {_norm(child.status)}")
     return status

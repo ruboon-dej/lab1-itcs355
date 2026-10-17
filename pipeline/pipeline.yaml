@@ -13,7 +13,7 @@ parameters:
   min_samples_leaf: 5
   floor: 0.75                # absolute floor on the validation metric
   margin: 0.0075             # must beat the incumbent by this much (about one seed of noise)
-  allow_bootstrap: true      # first run only: no production model exists yet. Flip to false.
+  allow_bootstrap: false      # first run only: no production model exists yet. Flip to false.
 
 compute:
   instance: Standard_DS2_v2  # dedicated: Azure ML low-priority quota is 0 on this subscription
@@ -34,11 +34,11 @@ steps:
     image: train
     needs: [validate]
     produces: model_dir
-  - name: gate                # writes decision.json and a boolean control output
+  - name: gate                # writes decision.json {passed, reason, candidate, incumbent}
     image: ops
     needs: [train]
-    produces: go
-  - name: register            # reachable only when the gate says go
+    produces: decision
+  - name: register            # registers only if the decision says passed; otherwise exits 3 (run marked Failed)
     image: ops
     needs: [gate]
-    condition: gate.go == true
+    condition: gate.passed == true   # enforced inside scripts/register_model.py (see README, Task 1)

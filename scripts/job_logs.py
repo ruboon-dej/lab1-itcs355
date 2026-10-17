@@ -1,6 +1,7 @@
 """Show why a pipeline step failed: statuses for every step, and the log tail of failed ones.
 
-    python scripts/job_logs.py <pipeline-job-name>
+    python scripts/job_logs.py <pipeline-job-name>          # logs of failed steps only
+    python scripts/job_logs.py <pipeline-job-name> --all    # log tail of every step
 """
 from __future__ import annotations
 
@@ -15,16 +16,18 @@ from src import config  # noqa: E402,F401
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    show_all = "--all" in sys.argv[1:]
+    if len(args) != 1:
         print(__doc__)
         return 2
     from cloudlayer import azure_ops
 
     client = azure_ops.ml_client()
-    for child in client.jobs.list(parent_job_name=sys.argv[1]):
+    for child in client.jobs.list(parent_job_name=args[0]):
         label = child.display_name or child.name
         print(f"{label:<44} {child.status}  ({child.name})")
-        if child.status not in ("Failed", "Canceled"):
+        if not show_all and str(child.status).split(".")[-1].capitalize() not in ("Failed", "Canceled"):
             continue
         err = getattr(child, "error", None)
         if err:

@@ -1,7 +1,8 @@
 """Register the candidate model with lineage tags. Runs only behind the gate.
 
-Defence in depth: even though the pipeline only starts this step when the gate says go,
-the script re-reads decision.json and refuses to register a rejected candidate.
+This is where the gate is enforced: the step reads decision.json and registers only when the
+gate passed. A rejected candidate exits 0 without touching the registry, so the pipeline
+completes and the log says NOT REGISTERED.
 """
 from __future__ import annotations
 
