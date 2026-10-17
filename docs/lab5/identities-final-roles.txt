@@ -1,0 +1,3 @@
+AcrPull
+Storage Blob Data Contributor
+AzureML Data Scientist
