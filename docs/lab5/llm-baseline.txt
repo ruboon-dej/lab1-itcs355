@@ -1,0 +1,21 @@
+golden set  lab5.jsonl  (15 cases)
+  [PASS] L5-001
+  [PASS] L5-002
+  [PASS] L5-003
+  [PASS] L5-004
+  [PASS] L5-005
+  [PASS] L5-006
+  [PASS] L5-007
+  [PASS] L5-008
+  [PASS] L5-009
+  [PASS] L5-010
+  [PASS] L5-011
+  [PASS] L5-012
+  [PASS] L5-013
+  [PASS] L5-014
+  [PASS] L5-015
+
+pass rate           15/15  (100.0%)
+p95 latency         1969 ms
+cost per 1k reqs    6.7846 THB  (azure/gpt-4.1-mini)
+wrote reports/llm_eval-lab5-baseline.json

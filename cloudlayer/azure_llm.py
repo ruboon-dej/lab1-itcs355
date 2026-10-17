@@ -49,6 +49,13 @@ def generate(cfg, prompt: str, params: dict[str, Any]) -> dict[str, Any]:
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode(errors="replace")[:300]
             last_error = f"HTTP {exc.code}: {detail}"
+            if exc.code == 400 and ("content_filter" in detail.lower()
+                                    or "content management policy" in detail.lower()):
+                return {"response": "[BLOCKED_BY_PROVIDER_CONTENT_FILTER]", "input_tokens": 0,
+                        "output_tokens": 0, "cached_input_tokens": 0,
+                        "latency_ms": int((time.perf_counter() - started) * 1000),
+                        "model": "", "finish_reason": "content_filter", "blocked": True,
+                        "provider_error": detail[:200]}
             if exc.code in (429, 500, 502, 503):
                 time.sleep(float(exc.headers.get("Retry-After", 2 * (attempt + 1))))
                 continue
