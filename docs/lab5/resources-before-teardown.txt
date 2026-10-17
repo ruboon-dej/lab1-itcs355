@@ -1,0 +1,21 @@
+Name                                  Lab
+------------------------------------  -----
+itcs3556688022
+itcs3556688022
+itcs3556storage8c47e98cc
+itcs3556keyvault7df19a20
+itcs3556logalyti4407d67d
+itcs3556insights44392345
+itcs355-6688022-ws                    2
+Application Insights Smart Detection
+itcs355-itcs355-6688022-cae
+workspace-itcs3556688022cxif
+itcs355-itcs355-6688022-cae2
+workspace-itcs3556688022pM50
+itcs355-6688022-cae
+workspace-itcs3556688022ffY5
+itcs355-itcs355-6688022-cae-wp
+itcs355-gh-deploy
+itcs355-6688022-aoai                  5
+itcs355-train-uai
+itcs355-serve-uai
