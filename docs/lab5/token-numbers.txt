@@ -1,8 +1,4 @@
-baseline  usage in/out/cached = 377/33/0   THB per 1k = 6.7846   pass = 1.0
-short     usage in/out/cached = 377/26/0   THB per 1k = 6.4115   pass = 0.8667
-degraded  usage in/out/cached = 222/35/0   THB per 1k = 4.8251   pass = 0.4667
-saving, prompt v3 vs baseline (THB/1k): 0.3732
-saving from a bare cap of 60 on baseline usage: 0.0
-baseline output tokens: max 41 median 31
-repo break-even hit rate (1.25x write, 0.10x read constants): 0.2174
-measured cache hit rate: 0.0
+baseline  in/out/cached 377/32/0  THB/1k 6.7313  THB/month@1000/day 201.9  pass 1.0
+degraded  in/out/cached 222/35/0  THB/1k 4.8251  THB/month@1000/day 144.8  pass 0.6667
+20-word   in/out/cached 377/25/0  THB/1k 6.3582  THB/month@1000/day 190.7  pass 1.0
+cap 60    in/out/cached 377/32/0  THB/1k 6.7313  THB/month@1000/day 201.9  pass 1.0

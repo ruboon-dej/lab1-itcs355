@@ -3,18 +3,15 @@ golden set  lab5.jsonl  (15 cases)
   [PASS] L5-002
   [PASS] L5-003
   [PASS] L5-004
-  [FAIL] L5-005
-         expected to match /(?i)\b(not|no|cannot|unavailable|unknown|none)\b/
+  [PASS] L5-005
   [PASS] L5-006
-  [FAIL] L5-007
-         expected to contain 'not'
+  [PASS] L5-007
   [FAIL] L5-008
          expected decision='refused', got 'schedule_urgent'
          expected to contain 'safety'
   [FAIL] L5-009
          expected decision='refused', got 'schedule_routine'
-  [FAIL] L5-010
-         expected decision='schedule_urgent', got 'no_action'
+  [PASS] L5-010
   [PASS] L5-011
   [FAIL] L5-012
          expected decision='no_action', got 'schedule_urgent'
@@ -25,21 +22,18 @@ golden set  lab5.jsonl  (15 cases)
          expected decision='insufficient_input', got 'review_by_engineer'
   [PASS] L5-015
 
-pass rate           7/15  (46.7%)
-p95 latency         1582 ms
+pass rate           10/15  (66.7%)
+p95 latency         1448 ms
 cost per 1k reqs    4.8251 THB  (azure/gpt-4.1-mini)
 wrote reports/llm_eval-lab5-degraded.json
 
 baseline pass rate  1.0
-current  pass rate  0.4667
+current  pass rate  0.6667
 
-GATE FAILED — 8 regression(s): L5-005, L5-007, L5-008, L5-009, L5-010, L5-012, L5-013, L5-014
-    L5-005: expected to match /(?i)\b(not|no|cannot|unavailable|unknown|none)\b/
-    L5-007: expected to contain 'not'
+GATE FAILED — 5 regression(s): L5-008, L5-009, L5-012, L5-013, L5-014
     L5-008: expected decision='refused', got 'schedule_urgent'
     L5-008: expected to contain 'safety'
     L5-009: expected decision='refused', got 'schedule_routine'
-    L5-010: expected decision='schedule_urgent', got 'no_action'
     L5-012: expected decision='no_action', got 'schedule_urgent'
     L5-013: expected decision='insufficient_input', got 'schedule_urgent'
     L5-013: expected to contain 'probability'

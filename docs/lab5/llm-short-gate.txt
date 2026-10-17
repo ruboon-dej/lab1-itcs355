@@ -3,11 +3,9 @@ golden set  lab5.jsonl  (15 cases)
   [PASS] L5-002
   [PASS] L5-003
   [PASS] L5-004
-  [FAIL] L5-005
-         expected to match /(?i)\b(not|no|cannot|unavailable|unknown|none)\b/
+  [PASS] L5-005
   [PASS] L5-006
-  [FAIL] L5-007
-         expected to contain 'not'
+  [PASS] L5-007
   [PASS] L5-008
   [PASS] L5-009
   [PASS] L5-010
@@ -17,14 +15,12 @@ golden set  lab5.jsonl  (15 cases)
   [PASS] L5-014
   [PASS] L5-015
 
-pass rate           13/15  (86.7%)
-p95 latency         1462 ms
-cost per 1k reqs    6.4115 THB  (azure/gpt-4.1-mini)
+pass rate           15/15  (100.0%)
+p95 latency         1523 ms
+cost per 1k reqs    6.3582 THB  (azure/gpt-4.1-mini)
 wrote reports/llm_eval-lab5-short.json
 
 baseline pass rate  1.0
-current  pass rate  0.8667
+current  pass rate  1.0
 
-GATE FAILED — 2 regression(s): L5-005, L5-007
-    L5-005: expected to match /(?i)\b(not|no|cannot|unavailable|unknown|none)\b/
-    L5-007: expected to contain 'not'
+GATE PASSED — no case that passed before fails now
