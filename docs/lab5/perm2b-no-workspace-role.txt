@@ -1,0 +1,28 @@
+train image: itcs3556688022.azurecr.io/itcs355@sha256:da6f0653cd4739f1c99cc95586b4f13e47d5d08d226e6ed646a2e374511da2d1
+ops image:   itcs3556688022.azurecr.io/itcs355@sha256:01236c70ef6b9b39d204e7a8c9eb38ed3d6819cf776fb0887b03d5f1b7582c51
+parameters:  {'data_seed': 20260101, 'model_seed': 20260101, 'n_estimators': 100, 'max_depth': 4, 'min_samples_leaf': 5, 'floor': 0.75, 'margin': 0.0075, 'allow_bootstrap': False}
+compute itcs355-lab5-cpu ready (Standard_DS2_v2, dedicated, min 0, tagged lab=5)
+submitted amusing_quill_l5n1w06l3c
+https://ml.azure.com/runs/amusing_quill_l5n1w06l3c?wsid=/subscriptions/28cbf7ce-87e6-43eb-9461-0c09ee7b247e/resourcegroups/itcs355-6688022/workspaces/itcs355-6688022-ws&tid=9bc585f9-a8b8-431c-9013-efa7b2b40cdf
+  pipeline amusing_quill_l5n1w06l3c: Notstarted
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Running
+  pipeline amusing_quill_l5n1w06l3c: Failed
+  step statuses:
+    ing                                        Completed
+    val                                        Completed
+    trn                                        Completed
+    gate                                       Completed
+    node                                       Failed
+final status: Failed

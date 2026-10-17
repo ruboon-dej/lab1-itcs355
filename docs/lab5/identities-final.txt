@@ -1,0 +1,5 @@
+Role                           Scope
+-----------------------------  ------------------------------------------------------------------------------------------------------------------------------------------------------------
+AcrPull                        /subscriptions/28cbf7ce-87e6-43eb-9461-0c09ee7b247e/resourceGroups/itcs355-6688022/providers/Microsoft.ContainerRegistry/registries/itcs3556688022
+Storage Blob Data Contributor  /subscriptions/28cbf7ce-87e6-43eb-9461-0c09ee7b247e/resourceGroups/itcs355-6688022/providers/Microsoft.Storage/storageAccounts/itcs3556storage8c47e98cc
+AzureML Data Scientist         /subscriptions/28cbf7ce-87e6-43eb-9461-0c09ee7b247e/resourceGroups/itcs355-6688022/providers/Microsoft.MachineLearningServices/workspaces/itcs355-6688022-ws
