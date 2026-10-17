@@ -1,0 +1,12 @@
+=== itcs355-lab5-test-08584093383928775710594991598CU58
+ing                                          Completed  (39a0acb8-f598-4967-af8c-3062f29dde28)
+val                                          Completed  (a8d55631-f2b6-4a10-84db-46f05547d8d5)
+trn                                          Completed  (eaadc9e1-1b5c-4aec-b59c-5281a0908475)
+  2026/10/17 20:28:20 WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH), so Git repository URL is not available. Error: Failed to initialize: Bad git executable.
+gate                                         Completed  (ca9e597d-414c-46ae-ac5d-a20bdf13cfaf)
+    "reason": "candidate 0.8426 does not beat incumbent 0.8426 by the margin 0.0075 (gain +0.0000)",
+  GATE REJECTED: candidate 0.8426 does not beat incumbent 0.8426 by the margin 0.0075 (gain +0.0000)
+node                                         Failed  (0a6413bf-2e5f-4deb-b61d-118ae1898d63)
+  refusing to register: gate rejected this candidate (candidate 0.8426 does not beat incumbent 0.8426 by the margin 0.0075 (gain +0.0000))
+=== itcs355-lab5-test-08584093372996870782674299683CU55
+  could not download logs: This job is in state Queued. Download is allowed only in states ['Completed', 'Failed', 'Canceled', 'NotResponding', 'Paused']
