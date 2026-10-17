@@ -9,5 +9,5 @@
 2026-10-17 16:01:28  FAILED        4.6 min  itcs355-lab5-retrain
 2026-10-17 20:07:20  FAILED        7.6 min  itcs355-lab5-retrain
 2026-10-17 20:21:33  FAILED        8.8 min  itcs355-lab5-test-20261017T202131Z
-2026-10-17 20:39:46  RUNNING       0.0 min  itcs355-lab5-test-20261017T203946Z
-lab=5 pipeline runs: 12   total pipeline wall time: 73.9 min = 1.23 h
+2026-10-17 20:39:46  FAILED        9.8 min  itcs355-lab5-test-20261017T203946Z
+lab=5 pipeline runs: 12   total pipeline wall time: 83.7 min = 1.39 h
