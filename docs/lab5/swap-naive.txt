@@ -4,7 +4,7 @@ secondary aws
 
   [FAIL            ] upload  ValueError: expected an s3://bucket/key URI, got 'https://itcs3556688022.blob.core.windows.net/itcs355/itcs355'
   [FAIL            ] download  ValueError: expected an s3://bucket/key URI, got 'https://itcs3556688022.blob.core.windows.net/itcs355/itcs355/portability/probe.txt'
-  [FAIL            ] invoke  ModuleNotFoundError: No module named 'boto3'
+  [PASS            ] invoke  
 
 Write-up (Lab 5 Task 4), half a page:
   - which method was hardest to port, and why
