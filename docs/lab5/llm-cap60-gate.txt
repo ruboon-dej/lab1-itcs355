@@ -1,0 +1,28 @@
+golden set  lab5.jsonl  (15 cases)
+  [PASS] L5-001
+  [PASS] L5-002
+  [PASS] L5-003
+  [PASS] L5-004
+  [FAIL] L5-005
+         expected to match /(?i)\b(not|no|cannot|unavailable|unknown|none)\b/
+  [PASS] L5-006
+  [PASS] L5-007
+  [PASS] L5-008
+  [PASS] L5-009
+  [PASS] L5-010
+  [PASS] L5-011
+  [PASS] L5-012
+  [PASS] L5-013
+  [PASS] L5-014
+  [PASS] L5-015
+
+pass rate           14/15  (93.3%)
+p95 latency         2181 ms
+cost per 1k reqs    6.7313 THB  (azure/gpt-4.1-mini)
+wrote reports/llm_eval-lab5-cap60.json
+
+baseline pass rate  1.0
+current  pass rate  0.9333
+
+GATE FAILED — 1 regression(s): L5-005
+    L5-005: expected to match /(?i)\b(not|no|cannot|unavailable|unknown|none)\b/
