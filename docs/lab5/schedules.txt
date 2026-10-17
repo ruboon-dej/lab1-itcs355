@@ -1,0 +1,1 @@
+itcs355-lab5-test                enabled=True  trigger=RecurrenceTrigger
