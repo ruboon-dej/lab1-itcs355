@@ -81,9 +81,12 @@ def ensure_cluster(name: str, size: str, tags: dict[str, str], uai_resource_id: 
 
 
 def delete_schedules(prefix: str) -> list[str]:
+    from azure.ai.ml.operations._schedule_operations import ScheduleListViewType
+
     client = ml_client()
     gone = []
-    for sched in client.schedules.list():
+    # the default view lists ENABLED schedules only; disabled ones must be removed too
+    for sched in client.schedules.list(list_view_type=ScheduleListViewType.ALL):
         if sched.name.startswith(prefix):
             client.schedules.begin_delete(sched.name).result()
             gone.append(f"schedule:{sched.name}")

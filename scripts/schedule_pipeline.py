@@ -33,7 +33,9 @@ def main() -> int:
 
     client = azure_ops.ml_client()
     if args.list:
-        for s in client.schedules.list():
+        from azure.ai.ml.operations._schedule_operations import ScheduleListViewType
+
+        for s in client.schedules.list(list_view_type=ScheduleListViewType.ALL):
             print(f"{s.name:<32} enabled={s.is_enabled}  trigger={type(s.trigger).__name__}")
         return 0
     if args.disable:

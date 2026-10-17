@@ -1,0 +1,12 @@
+schedules:
+  itcs355-lab5-weekly      enabled=False  CronTrigger
+  itcs355-lab5-test        enabled=False  RecurrenceTrigger
+pipeline runs of itcs355-lab5-retrain (oldest first):
+  2026-10-17 11:09:30  FAILED     created_by_type=CreatedByType.USER  zen_kitchen_d4d5nj9ldl
+  2026-10-17 12:13:02  COMPLETED  created_by_type=CreatedByType.USER  hungry_avocado_7crzqlp0ts
+  2026-10-17 12:22:36  FAILED     created_by_type=CreatedByType.USER  yellow_clock_39rf8d6wvf
+  2026-10-17 12:36:04  FAILED     created_by_type=CreatedByType.USER  cyan_roti_v5v1sp97tn
+  2026-10-17 15:05:54  FAILED     created_by_type=CreatedByType.USER  loyal_answer_vt066hgc01
+  2026-10-17 15:33:37  FAILED     created_by_type=CreatedByType.USER  tidy_basil_460nzg1p1z
+  2026-10-17 16:01:28  FAILED     created_by_type=CreatedByType.USER  amusing_quill_l5n1w06l3c
+  2026-10-17 20:07:20  FAILED     created_by_type=CreatedByType.USER  great_stick_4hhw4jj276
