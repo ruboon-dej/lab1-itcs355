@@ -70,9 +70,8 @@ reproduce: data image ## THE ONE COMMAND. Grader runs this.
 verify: ## Check the produced metric against the README claim
 	python scripts/verify_metric.py
 
-teardown: ## Delete every resource tagged course=itcs355 for this lab
-	python -c "from src import config; from cloudlayer.factory import get_adapter; \
-	cfg=config.load(); print(get_adapter(cfg).teardown(cfg.tags(3)))"
+teardown: ## Delete everything tagged lab=5 and what tags cannot reach
+	python scripts/teardown_lab5.py
 
 clean: ## Remove local artifacts
 	rm -rf mlruns mlartifacts mlflow.db reports/metrics.json reports/deploy-model
@@ -155,3 +154,17 @@ llm-gate: ## Prove the gate fails on a degraded set — expected to exit non-zer
 
 swap-check: ## Prove the portability seam against a second provider
 	python scripts/portability_swap_check.py --second-provider $(SECOND)
+
+# --- Lab 5 additions (scripts/lab5_apply.py) ---
+.PHONY: image-ops image-ops-push pipeline-submit
+image-ops: ## Build the ops image (gate, register) for linux/amd64
+	docker buildx build --platform $(PLATFORM) -f Dockerfile.ops -t itcs355-ops:$(TAG) --load .
+
+image-ops-push: image-ops ## Push the ops image and record its digest in .image_ops_uri
+	@python -c "from cloudlayer.factory import get_adapter; from src import config; \
+	uri = get_adapter(config.load()).push_image('itcs355-ops:$(TAG)'); \
+	open('.image_ops_uri', 'w').write(uri); \
+	print(uri)"
+
+pipeline-submit: ## Submit the Lab 5 pipeline, e.g. make pipeline-submit ARGS="--wait"
+	python scripts/submit_pipeline.py $(ARGS)

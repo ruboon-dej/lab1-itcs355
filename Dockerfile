@@ -34,6 +34,7 @@ WORKDIR /app
 COPY --chown=runner:runner src/ ./src/
 COPY --chown=runner:runner cloudlayer/ ./cloudlayer/
 COPY --chown=runner:runner scripts/ ./scripts/
+COPY --chown=runner:runner tests/ ./tests/
 
 RUN mkdir -p /app/mlruns /app/reports /app/data /app/outputs && chown -R runner:runner /app/mlruns /app/reports /app/data /app/outputs
 

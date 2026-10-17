@@ -1,55 +1,44 @@
-# Lab 5 — pipeline as a neutral DAG.
-#
-# This file describes WHAT runs. cloudlayer/pipelines.py compiles it into SageMaker
-# Pipelines, Azure ML Pipelines, or Vertex AI Pipelines. Keeping the DAG here rather than
-# in provider SDK calls is what makes the pipeline portable, and it is why every step is
-# a container rather than a function.
+# Provider-neutral pipeline spec. Step LOGIC lives in the images (scripts/, src/);
+# this file only says what runs, in what order, and under which condition.
+# cloudlayer/pipelines.py turns it into a provider pipeline (Azure ML Pipelines here).
+name: itcs355-lab5-retrain
+experiment: itcs355-lab5
+tags: {course: itcs355, lab: "5"}
 
-name: itcs355-training-pipeline
-schedule: "0 2 * * 0"          # TODO(Lab 5): justify this in your README, or change it
+parameters:
+  data_seed: 20260101        # fixed on purpose: candidate and incumbent see the same data
+  model_seed: 20260101
+  n_estimators: 100
+  max_depth: 4
+  min_samples_leaf: 5
+  floor: 0.75                # absolute floor on the validation metric
+  margin: 0.0075             # must beat the incumbent by this much (about one seed of noise)
+  allow_bootstrap: true      # first run only: no production model exists yet. Flip to false.
+
+compute:
+  instance: Standard_DS2_v2  # dedicated: Azure ML low-priority quota is 0 on this subscription
+  spot: false
+  min_nodes: 0
+  max_nodes: 1
+  idle_seconds: 120
+  step_timeout_seconds: 900
 
 steps:
   - name: ingest
-    image: "${CONTAINER_REGISTRY}/itcs355:${IMAGE_TAG}"
-    command: ["python", "scripts/make_dataset.py"]
-    outputs: [raw_data]
-
-  - name: validate
-    image: "${CONTAINER_REGISTRY}/itcs355:${IMAGE_TAG}"
-    command: ["pytest", "-q", "tests/test_data.py"]
-    depends_on: [ingest]
-    on_failure: abort
-    # Aborting here is the point. A pipeline that trains on data failing its own contract
-    # produces a model nobody should trust, and it will do so silently.
-
+    image: train
+    produces: data
+  - name: validate            # data contract tests; a failure stops the pipeline
+    image: train
+    needs: [ingest]
   - name: train
-    image: "${CONTAINER_REGISTRY}/itcs355:${IMAGE_TAG}"
-    command: ["python", "-m", "src.train", "--metrics-out", "/outputs/metrics.json"]
-    depends_on: [validate]
-    instance: "${TRAIN_INSTANCE}"
-    spot: true
-    outputs: [model, metrics]
-
-  - name: evaluate
-    image: "${CONTAINER_REGISTRY}/itcs355:${IMAGE_TAG}"
-    command: ["python", "scripts/evaluation_gate.py", "--metrics", "/outputs/metrics.json"]
-    depends_on: [train]
-    outputs: [gate_decision]
-
-  - name: register
-    image: "${CONTAINER_REGISTRY}/itcs355:${IMAGE_TAG}"
-    command: ["python", "scripts/register.py"]
-    depends_on: [evaluate]
-    condition: "gate_decision == 'pass'"
-    # TODO(Lab 5): a pipeline that registers unconditionally has no gate. The condition
-    # must be real, and the grader will try to make it fail.
-
-  - name: deploy_staging
-    image: "${CONTAINER_REGISTRY}/itcs355:${IMAGE_TAG}"
-    command: ["python", "scripts/deploy.py", "--target", "staging"]
-    depends_on: [register]
-
-tags:
-  course: itcs355
-  student: "${PROJECT_ID}"
-  lab: "5"
+    image: train
+    needs: [validate]
+    produces: model_dir
+  - name: gate                # writes decision.json and a boolean control output
+    image: ops
+    needs: [train]
+    produces: go
+  - name: register            # reachable only when the gate says go
+    image: ops
+    needs: [gate]
+    condition: gate.go == true

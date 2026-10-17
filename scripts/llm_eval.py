@@ -110,6 +110,7 @@ def score(golden: list[dict], responses: list[dict]) -> list[dict]:
             "failures": failures,
             "input_tokens": got.get("input_tokens", 0),
             "output_tokens": got.get("output_tokens", 0),
+            "cached_input_tokens": got.get("cached_input_tokens", 0),
             "latency_ms": got.get("latency_ms", 0),
         })
     return results
@@ -128,9 +129,11 @@ def summarise(results: list[dict], provider: str, model: str) -> dict:
     passed = sum(1 for r in results if r["passed"])
     in_tok = sum(r.get("input_tokens", 0) for r in results)
     out_tok = sum(r.get("output_tokens", 0) for r in results)
+    cached_tok = sum(r.get("cached_input_tokens", 0) for r in results)
     avg = llmcost.Usage(
         input_tokens=round(in_tok / total) if total else 0,
         output_tokens=round(out_tok / total) if total else 0,
+        cached_input_tokens=min(round(cached_tok / total), round(in_tok / total)) if total else 0,
     )
     return {
         "provider": provider,
@@ -141,6 +144,7 @@ def summarise(results: list[dict], provider: str, model: str) -> dict:
         "p95_latency_ms": percentile([r.get("latency_ms", 0) for r in results], 95),
         "avg_input_tokens": avg.input_tokens,
         "avg_output_tokens": avg.output_tokens,
+        "avg_cached_input_tokens": avg.cached_input_tokens,
         "thb_per_1k_requests": round(llmcost.cost_per_1k_requests(provider, model, avg), 4),
         "results": results,
     }
@@ -181,11 +185,20 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=ROOT / "reports" / "llm_eval.json")
     ap.add_argument("--baseline", type=Path,
                     help="a previous report; fail if any case regresses against it")
+    ap.add_argument("--max-output-tokens", type=int, default=200)
+    ap.add_argument("--temperature", type=float, default=0.0)
+    ap.add_argument("--system-prompt", type=Path, default=None,
+                    help="system prompt file sent with every live call")
+    ap.add_argument("--record", type=Path, default=None,
+                    help="with --live: save the raw responses as a replayable fixture")
     args = ap.parse_args()
 
     golden = read_jsonl(args.golden)
     if args.live:
-        responses = generate_live(golden)
+        responses = generate_live(golden, args)
+        if args.record:
+            args.record.parent.mkdir(parents=True, exist_ok=True)
+            args.record.write_text("".join(json.dumps(r) + "\n" for r in responses))
     else:
         responses = read_jsonl(args.responses)
 
@@ -212,20 +225,26 @@ def main() -> int:
     return 0
 
 
-def generate_live(golden: list[dict]) -> list[dict]:
-    """TODO(Lab 5): route each prompt through your adapter's `generate`.
+def generate_live(golden: list[dict], args=None) -> list[dict]:
+    """Route each prompt through the adapter's `generate`.
 
-    Record input_tokens, output_tokens and latency_ms from the provider's own usage
-    fields — do not estimate them by counting words. Every provider tokenises
-    differently, and an estimated token count in a cost report is a fabricated number.
+    input_tokens, output_tokens, cached_input_tokens and latency_ms are copied from the
+    provider's own usage block. They are never estimated from word counts.
     """
     from src import config
     from cloudlayer.factory import get_adapter
 
     adapter = get_adapter(config.load())
+    params = {
+        "max_output_tokens": getattr(args, "max_output_tokens", 200),
+        "temperature": getattr(args, "temperature", 0.0),
+    }
+    system_path = getattr(args, "system_prompt", None)
+    if system_path:
+        params["system"] = Path(system_path).read_text()
     rows = []
     for case in golden:
-        result = adapter.generate(case["prompt"], {"max_output_tokens": 200})
+        result = adapter.generate(case["prompt"], dict(params))
         rows.append({"id": case["id"], **result})
     return rows
 

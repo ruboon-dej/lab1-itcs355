@@ -36,6 +36,9 @@ TOKEN_PRICE_TABLE: dict[str, dict[str, tuple[float, float]]] = {
         "large": (540.0, 2700.0),
     },
     "azure": {
+        # gpt-4.1-mini Global Standard: $0.40 in / $1.60 out per 1M tokens x 33.32 THB/USD.
+        # VERIFY on the Azure pricing page and write the date you checked in your cost report.
+        "gpt-4.1-mini": (13.33, 53.31),
         "small": (9.5, 38.0),
         "medium": (112.0, 550.0),
         "large": (550.0, 2750.0),

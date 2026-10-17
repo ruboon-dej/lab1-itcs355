@@ -1288,6 +1288,12 @@ class AzureAdapter(CloudAdapter):
                 f"Application Insights did not accept the metric: HTTP {response.status_code} {body}"
             )
 
+    def generate(self, prompt: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Azure OpenAI chat completion; tokens come from the provider usage block."""
+        from cloudlayer.azure_llm import generate as _generate
+
+        return _generate(self.cfg, prompt, params)
+
     def teardown(
         self,
         tags: dict[str, str],

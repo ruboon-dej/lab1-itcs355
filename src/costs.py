@@ -5,7 +5,7 @@ your provider's calculator. Verifying them is part of Lab 2; citing a stale numb
 checking is the kind of thing the cost report is designed to catch.
 
 Rates are THB per hour, on-demand. Discounted (spot / low-priority / preemptible) compute
-is roughly 30% of on-demand across all three providers — SPOT_FACTOR below.
+is roughly 20% of on-demand across all three providers — SPOT_FACTOR below.
 """
 from __future__ import annotations
 
@@ -20,10 +20,11 @@ PRICE_TABLE: dict[str, dict[str, float]] = {
         "ml.g4dn.xlarge": 26.0,
     },
     "azure": {
-        # Standard_DS2_v2 Japan East: $0.336/hour.
+        # Linux pay-as-you-go, Japan East, Azure Retail Prices API 2026-10-16:
+        # DS2_v2 $0.205/h, DS3_v2 $0.409/h (earlier values here were wrong).
         # Converted to THB using ~33.32 THB/USD on 2026-09-21.
-        "Standard_DS2_v2": 11.1955,
-        "Standard_DS3_v2": 8.1,
+        "Standard_DS2_v2": 6.8306,
+        "Standard_DS3_v2": 13.628,
         "Standard_F4s_v2": 6.9,
         "Standard_NC4as_T4_v3": 24.5,
     },
@@ -34,7 +35,7 @@ PRICE_TABLE: dict[str, dict[str, float]] = {
     },
 }
 
-SPOT_FACTOR = 0.30
+SPOT_FACTOR = 0.20
 DEFAULT_UTILISATIONS = (0.05, 0.25, 0.80)
 
 

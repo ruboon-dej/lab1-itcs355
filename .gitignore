@@ -25,3 +25,4 @@ __pycache__/
 .ruff_cache/
 
 .image_uri
+.image_ops_uri

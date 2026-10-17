@@ -1,37 +1,62 @@
-"""AWS adapter. Implement upload/download/push_image for Lab 1.
+"""AWS adapter: the three methods the Lab 5 portability swap needs (upload, download, invoke).
 
-SDK:  pip install boto3
-Docs: S3 -> boto3 client("s3"); ECR -> boto3 client("ecr") for the auth token,
-      then `docker push` through subprocess.
+BLOB_URI looks like s3://bucket/prefix. Nothing here is called with an endpoint override:
+to run against an emulator, export AWS_ENDPOINT_URL_S3 / AWS_ENDPOINT_URL_SAGEMAKER_RUNTIME
+(boto3 reads them), so this file stays identical for a real account.
 
-Hints for Lab 1:
-  * BLOB_URI looks like s3://bucket/prefix — parse it here, never in src/.
-  * ECR login expires. If a push that worked yesterday fails today, re-authenticate:
-        aws ecr get-login-password --region $REGION | docker login --username AWS \
-            --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
-  * Return the DIGEST reference from push_image, not the tag. `docker inspect` or the
-    push output gives you the sha256.
-  * Tag the bucket objects and the ECR repository with cfg.tags(1).
+Everything else raises NotImplementedError on purpose: this is a seam test, not a migration.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from cloudlayer.base import CloudAdapter
 
 
+def _split(uri: str) -> tuple[str, str]:
+    parsed = urlparse(uri)
+    if parsed.scheme != "s3" or not parsed.netloc:
+        raise ValueError(f"expected an s3://bucket/key URI, got {uri!r}")
+    return parsed.netloc, parsed.path.lstrip("/")
+
+
 class AwsAdapter(CloudAdapter):
+    def _s3(self):
+        import boto3
+
+        return boto3.client("s3", region_name=self.cfg.region if self.cfg.region != "unset" else None)
+
     def upload(self, local_path: str, key: str) -> str:
-        raise NotImplementedError("TODO Lab 1: put_object into BLOB_URI, return the s3:// URI")
+        bucket, prefix = _split(self.cfg.blob_uri)
+        full_key = "/".join(p for p in (prefix.strip("/"), key.lstrip("/")) if p)
+        self._s3().upload_file(local_path, bucket, full_key)
+        return f"s3://{bucket}/{full_key}"
 
     def download(self, uri: str, local_path: str) -> None:
-        raise NotImplementedError("TODO Lab 1: download_file, creating parent directories")
+        bucket, key = _split(uri)
+        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+        self._s3().download_file(bucket, key, local_path)
+
+    def invoke(self, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """SageMaker real-time endpoint. The response body is a stream of bytes whose shape
+        is whatever the container chose; Azure returns parsed JSON with `probability`.
+        Normalising the two is the leak this lab asks you to write about."""
+        import boto3
+
+        client = boto3.client("sagemaker-runtime",
+                              region_name=self.cfg.region if self.cfg.region != "unset" else None)
+        resp = client.invoke_endpoint(EndpointName=endpoint, ContentType="application/json",
+                                      Body=json.dumps(payload))
+        body = json.loads(resp["Body"].read())
+        if "probability" in body:
+            return body
+        preds = body.get("predictions") or []
+        if preds and "score" in preds[0]:
+            return {"probability": float(preds[0]["score"]), "model_version": "unknown"}
+        return body
 
     def push_image(self, local_tag: str) -> str:
-        raise NotImplementedError("TODO Lab 1: authenticate to ECR, push, return repo@sha256:...")
-
-    # submit_training / register_model  -> Lab 2 (SageMaker training job + model package group)
-    # deploy / invoke                   -> Lab 3 (SageMaker real-time endpoint)
-    # emit_metric                       -> Lab 4 (CloudWatch put_metric_data)
-    # generate                          -> Lab 5 (managed LLM endpoint; read the usage block for tokens)
-    # teardown                          -> Lab 5 (resourcegroupstaggingapi to find by tag)
+        raise NotImplementedError("not part of the Lab 5 swap: push_image")
