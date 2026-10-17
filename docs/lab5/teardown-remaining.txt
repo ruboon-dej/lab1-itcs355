@@ -1,0 +1,3 @@
+Name                  ResourceGroup    Location    Type
+--------------------  ---------------  ----------  ------------------------------------
+itcs355-6688022-aoai  itcs355-6688022  japaneast   Microsoft.CognitiveServices/accounts

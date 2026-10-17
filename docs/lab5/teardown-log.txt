@@ -1,32 +1,34 @@
 1. adapter teardown (jobs, compute, staging container app)
-Traceback (most recent call last):
-  File "/Users/ruboondej-udom/Documents/public_teaching_mlaiops/scripts/teardown_lab5.py", line 69, in <module>
-    sys.exit(main())
-             ^^^^^^
-  File "/Users/ruboondej-udom/Documents/public_teaching_mlaiops/scripts/teardown_lab5.py", line 39, in main
-    deleted += get_adapter(cfg).teardown(cfg.tags(5))
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/ruboondej-udom/Documents/public_teaching_mlaiops/cloudlayer/azure.py", line 1323, in teardown
-    ml_client.jobs.begin_delete(
-  File "/Users/ruboondej-udom/Documents/public_teaching_mlaiops/.venv/lib/python3.11/site-packages/azure/core/tracing/decorator.py", line 119, in wrapper_use_tracer
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/ruboondej-udom/Documents/public_teaching_mlaiops/.venv/lib/python3.11/site-packages/azure/ai/ml/_telemetry/activity.py", line 288, in wrapper
-    return f(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^
-  File "/Users/ruboondej-udom/Documents/public_teaching_mlaiops/.venv/lib/python3.11/site-packages/azure/ai/ml/operations/_job_operations.py", line 504, in begin_delete
-    return self._operation_2023_02_preview.begin_delete(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/ruboondej-udom/Documents/public_teaching_mlaiops/.venv/lib/python3.11/site-packages/azure/core/tracing/decorator.py", line 119, in wrapper_use_tracer
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/ruboondej-udom/Documents/public_teaching_mlaiops/.venv/lib/python3.11/site-packages/azure/ai/ml/_restclient/arm_ml_service/operations/_operations.py", line 36881, in begin_delete
-    raw_result = self._delete_initial(
-                 ^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/ruboondej-udom/Documents/public_teaching_mlaiops/.venv/lib/python3.11/site-packages/azure/ai/ml/_restclient/arm_ml_service/operations/_operations.py", line 36834, in _delete_initial
-    map_error(status_code=response.status_code, response=response, error_map=error_map)
-  File "/Users/ruboondej-udom/Documents/public_teaching_mlaiops/.venv/lib/python3.11/site-packages/azure/core/exceptions.py", line 163, in map_error
-    raise error
-azure.core.exceptions.ResourceExistsError: (UserError) Run cannot be deleted because it is active
-Code: UserError
-Message: Run cannot be deleted because it is active
+2. schedules
+................................Name                  ResourceGroup    Location    Type
+--------------------  ---------------  ----------  ------------------------------------
+itcs355-6688022-aoai  itcs355-6688022  japaneast   Microsoft.CognitiveServices/accounts
+3. Azure OpenAI account (delete, then purge so the name is released)
+  $ az cognitiveservices account delete -g itcs355-6688022 -n itcs355-itcs355-6688022-aoai
+  $ az cognitiveservices account purge -g itcs355-6688022 -n itcs355-itcs355-6688022-aoai -l japaneast
+4. identities
+  $ az identity delete -g itcs355-6688022 -n itcs355-train-uai
+  $ az identity delete -g itcs355-6688022 -n itcs355-serve-uai
+
+Deleted / requested:
+  job:itcs355-lab5-test-08584093372996870782674299683CU55
+  job:itcs355-lab5-test-08584093383928775710594991598CU58
+  job:great_stick_4hhw4jj276
+  job:amusing_quill_l5n1w06l3c
+  job:tidy_basil_460nzg1p1z
+  job:loyal_answer_vt066hgc01
+  job:cyan_roti_v5v1sp97tn
+  job:yellow_clock_39rf8d6wvf
+  job:hungry_avocado_7crzqlp0ts
+  job:zen_kitchen_d4d5nj9ldl
+  job:amiable_okra_x6n2nv4jn9
+  job:dynamic_stem_10spjkl4s7
+  compute:itcs355-lab5-cpu
+  schedule:itcs355-lab5-test
+  schedule:itcs355-lab5-weekly
+  openai:itcs355-itcs355-6688022-aoai
+  identity:itcs355-train-uai
+  identity:itcs355-serve-uai
+
+Still carrying lab=5 (screenshot this; it must be empty, re-check in 24h):
+  $ az resource list --tag lab=5 -o table
