@@ -47,7 +47,7 @@ def main() -> int:
         print(f"  could not remove schedules: {exc}")
 
     print("3. Azure OpenAI account (delete, then purge so the name is released)")
-    aoai = os.environ.get("AOAI_NAME", f"itcs355-{cfg.project_id}-aoai")
+    aoai = os.environ.get("AOAI_NAME", f"{cfg.project_id}-aoai")
     if sh(["az", "cognitiveservices", "account", "delete", "-g", rg, "-n", aoai]) == 0:
         deleted.append(f"openai:{aoai}")
         sh(["az", "cognitiveservices", "account", "purge", "-g", rg, "-n", aoai,
