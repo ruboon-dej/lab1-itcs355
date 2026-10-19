@@ -207,7 +207,7 @@ re-run across 3 seeds to check stability:
 
 Seed 20260102 was chosen because it had the highest validation ROC-AUC of the three seed reruns, and validation performance is used for choosing the model; the test set is kept held-out. Even though seed 20260101 had a slightly better score on the test set, using the performance on the test set for choosing the model leaks information about the held-out data.
 
-The cost of the 12 trial study was about 2.91 THB which is obviously less than the budgeted 150 THB. This is equivalent to an average of approximately 0.24 THB per trial. One monthly retrain is about 0.24 THB by that average, an estimate rather than a verified Azure bill.
+The cost of the 12 trial study was about 2.91 THB which is obviously less than the budgeted 150 THB. This is equivalent to an average of approximately 0.24 THB per trial. One monthly retrain is about 0.24 THB by that average, an estimate rather than a verified Azure bill. *(Correction, Lab 5: about 4.90 THB for the 12 trials, 0.41 THB per trial; see [Corrections to earlier labs](#corrections-to-earlier-labs).)*
 
 One way this choice could be wrong is that the seed also reseeds
 `make_dataset.py`, so the three runs vary both model randomness and the
@@ -563,6 +563,8 @@ The estimated cost per 1,000 predictions is:
 |         25% |                  1.8646 |
 |         80% |                  0.5827 |
 
+> **Correction (Lab 5):** this table used a wrong VM rate. The corrected figures are 5.69 / 1.14 / 0.36 THB at 5% / 25% / 80% utilisation. See [Corrections to earlier labs](#corrections-to-earlier-labs).
+
 The 80% utilisation figure is used as the primary estimate, while the other utilisation levels are shown because utilisation is an important assumption for a continuously running serving instance.
 
 The cost analysis also considers the advantage of batching: batch inference can process substantially more predictions per second, which can reduce the compute cost per prediction when the application's latency requirements allow batching.
@@ -573,13 +575,7 @@ The detailed cost analysis is documented in:
 reports/lab3-report.md
 ```
 
-An additional cost-report artifact is retained at:
-
-```text
-reports/lab5-cost.md
-```
-
-This file originates from the supplied scaffold and contains the project's cost-report calculations. It is retained as supporting cost information; the authoritative Lab 3 cost analysis is `reports/lab3-report.md`.
+Note (Lab 5): when this lab was written, `reports/lab5-cost.md` held the supplied scaffold's cost calculations; it has since been replaced by the Lab 5 cost report. The authoritative Lab 3 cost analysis is `reports/lab3-report.md`.
 
 ### Teardown
 
@@ -873,6 +869,7 @@ python -m monitoring.drift --current data/current.csv --threshold 0.09 --pushgat
 ```
 
 Open `http://localhost:3000` for the dashboard. Use one uvicorn worker: Prometheus counters are per process.
+
 ---
 
 ## Lab 5 — Managed Pipeline, Least Privilege, Portability, Cost, and an LLM Step
@@ -1060,15 +1057,16 @@ up is a little explanatory detail in each answer.
 
 ### Task 5 and Task 6: cost and teardown
 
-The cost report is `reports/lab5-cost.md`. Billed for the resource group, 14 to 19 October: **$1.28 (about 42.7 THB)**, against a 60 THB pre-run estimate. The registry was 27.0 THB of it, the Azure ML workspace line (which holds the pipeline cluster's compute) 14.7 THB, and the Azure OpenAI account 1.0 THB. My estimate was 29% too high, mainly because it assumed a larger VM and longer runs; my usage-based reconstruction of compute plus LLM (13.4 THB) is within 20% of the billed 15.7 THB. Screenshot: `docs/lab5/cost-analysis.png`.
+The cost report is `reports/lab5-cost.md`. Billed for the resource group, 14 to 19 October: **$1.28 (about 42.7 THB)**, against a 60 THB pre-run estimate. The registry was 27.0 THB of it, the Azure ML workspace line (which holds the pipeline cluster's compute) 14.7 THB, and the Azure OpenAI account 1.0 THB. My estimate was 29% too high, mainly because it assumed a larger VM and longer runs; my usage-based reconstruction of compute plus LLM (13.4 THB) is within 20% of the billed 15.7 THB. Screenshot:
+
+![Azure Cost analysis, resource group itcs355-6688022, 14 to 19 October](docs/lab5/cost-analysis.png)
 
 Teardown: `make teardown` removed the pipeline jobs, the compute cluster, both schedules, the two
 new identities and the Azure OpenAI account (soft-deleted, then purged); I also deleted the failed Lab 2 cluster. `az resource list --tag lab=5`,
 `az ml compute list` and `az ml schedule list` were empty afterwards (`docs/lab5/teardown-log.txt`, `teardown-remaining.txt`); screenshot:
 `docs/lab5/teardown-empty.png`. Re-checked about 26 hours later (`docs/lab5/teardown-24h.txt`): no resources tagged lab=5, no compute clusters, only the CI identity under identities.
 
- Not removed because they predate Lab 5 and are
-shared: the container registry, the workspace and its storage, the Key Vault, four idle Container Apps environments with no apps, and the CI identity.
+Not removed because they predate Lab 5 and are shared: the container registry, the workspace and its storage, the Key Vault, four idle Container Apps environments with no apps, and the CI identity.
 
 ### Corrections to earlier labs
 
@@ -1081,7 +1079,7 @@ shared: the container registry, the workspace and its storage, the Key Vault, fo
 
 ### Lab 5 substitutions and limitations
 
-- **L5-S1: dedicated compute, not spot.** Azure ML `TotalLowPriorityCores` is 0 on this subscription (`docs/lab5/` quota output), so the pipeline uses
+- **L5-S1: dedicated compute, not spot.** Azure ML `TotalLowPriorityCores` is 0 on this subscription (`docs/lab5/quota.txt`), so the pipeline uses
   dedicated `Standard_DS2_v2` with min nodes 0.
 - **L5-S2: the gate is enforced in the register step, not by a native conditional node.** An Azure ML `if_else` node failed at run time (`docs/lab5/condition-true.txt`,
   `condition-error.txt`). From the SDK source its true/false value is reported through run history, which needs `mlflow` and `azureml-mlflow` in the step image; the
@@ -1098,6 +1096,11 @@ shared: the container registry, the workspace and its storage, the Key Vault, fo
 - **L5-S9: a rejected run ends `Failed`.** The images were built before I considered making the register step exit 0, so the repository matches the deployed behaviour (exit 3).
 - **L5-S10: provider content filter.** Azure's jailbreak detection blocked blunt injection prompts; the final injection cases are politer and test the model.
 - **L5-S11: identities were created without the `lab=5` tag** (a shell word-splitting slip), so they were not found by tag. They cost nothing and were deleted by name.
+
+### Notes for the grader (Lab 5)
+
+- `git log -p | grep -i -E "secret|password|AKIA|BEGIN PRIVATE"` prints two lines, both false positives: the words `get-login-password` in the `aws ecr get-login-password` command that the original AWS adapter stub quoted in a comment (since replaced), and a dummy `AWS_SECRET_ACCESS_KEY` set to `test` in `scripts/emulate_aws.py` for the local emulator. No credential was committed.
+- The pipeline jobs, compute cluster, schedules and OpenAI account were deleted at teardown, so the run logs in `docs/lab5/` and the registry tags are the evidence.
 
 ### Reproduce Lab 5 offline (free)
 
