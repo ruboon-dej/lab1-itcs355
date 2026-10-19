@@ -879,8 +879,7 @@ Open `http://localhost:3000` for the dashboard. Use one uvicorn worker: Promethe
 
 Everything below is backed by a log, a screenshot or a file under `docs/lab5/`. Where the Azure for
 Students subscription blocked the intended approach, the substitution and its reason are in
-[Substitutions and limitations](#lab-5-substitutions-and-limitations). Cells marked PENDING are
-filled once billing has settled or the 24-hour teardown re-check is done.
+[Substitutions and limitations](#lab-5-substitutions-and-limitations). Results and figures are final.
 
 | Deliverable | Status | Evidence |
 |---|---|---|
@@ -888,8 +887,8 @@ filled once billing has settled or the 24-hour teardown re-check is done.
 | Three scoped identities, one permission removed | Done | `docs/lab5/identities.txt`, `perm1-*`, `perm2b-*`, `perm2c-*` |
 | Scheduled retraining and the three-strategy answer | Done: schedule observed firing twice | `docs/lab5/scheduled-runs-all.txt`, `scheduled-run-logs.txt` |
 | Portability audit and second-provider swap | Done against emulators (L5-S5) | `docs/lab5/swap-naive.txt`, `swap-pass.txt` |
-| Cost report with all six sections | Written; billing figures PENDING | `reports/lab5-cost.md`, `docs/lab5/actual-cost.txt` |
-| Teardown verified | Done; 24-hour re-check PENDING | `docs/lab5/teardown-log.txt`, `teardown-empty.png`, `teardown-24h.txt` |
+| Cost report with all six sections | Done: billed $1.28 (about 42.7 THB) against a 60 THB estimate | `reports/lab5-cost.md`, `docs/lab5/cost-analysis.png` |
+| Teardown verified | Done, re-checked about 26 hours later | `docs/lab5/teardown-log.txt`, `teardown-empty.png`, `teardown-24h.txt` |
 | LLM golden set, gate, guardrail, token bill | Done | `evals/golden/lab5.jsonl`, `docs/lab5/llm-*.txt`, `docs/lab5/token-numbers.txt` |
 
 ### Task 1: Managed pipeline
@@ -1061,10 +1060,14 @@ up is a little explanatory detail in each answer.
 
 ### Task 5 and Task 6: cost and teardown
 
-The cost report is `reports/lab5-cost.md`. Teardown: `make teardown` removed the pipeline jobs, the compute cluster, both schedules, the two
+The cost report is `reports/lab5-cost.md`. Billed for the resource group, 14 to 19 October: **$1.28 (about 42.7 THB)**, against a 60 THB pre-run estimate. The registry was 27.0 THB of it, the Azure ML workspace line (which holds the pipeline cluster's compute) 14.7 THB, and the Azure OpenAI account 1.0 THB. My estimate was 29% too high, mainly because it assumed a larger VM and longer runs; my usage-based reconstruction of compute plus LLM (13.4 THB) is within 20% of the billed 15.7 THB. Screenshot: `docs/lab5/cost-analysis.png`.
+
+Teardown: `make teardown` removed the pipeline jobs, the compute cluster, both schedules, the two
 new identities and the Azure OpenAI account (soft-deleted, then purged); I also deleted the failed Lab 2 cluster. `az resource list --tag lab=5`,
 `az ml compute list` and `az ml schedule list` were empty afterwards (`docs/lab5/teardown-log.txt`, `teardown-remaining.txt`); screenshot:
-`docs/lab5/teardown-empty.png`. Re-check after 24 hours: PENDING (`docs/lab5/teardown-24h.txt`). Not removed because they predate Lab 5 and are
+`docs/lab5/teardown-empty.png`. Re-checked about 26 hours later (`docs/lab5/teardown-24h.txt`): no resources tagged lab=5, no compute clusters, only the CI identity under identities.
+
+ Not removed because they predate Lab 5 and are
 shared: the container registry, the workspace and its storage, the Key Vault, four idle Container Apps environments with no apps, and the CI identity.
 
 ### Corrections to earlier labs

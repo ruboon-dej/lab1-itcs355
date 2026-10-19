@@ -1,0 +1,6 @@
+Sun Oct 18 23:17:00 UTC 2026
+
+
+ClientId                              IsolationScope    Location    Name               PrincipalId                           ResourceGroup    TenantId
+------------------------------------  ----------------  ----------  -----------------  ------------------------------------  ---------------  ------------------------------------
+2c3c3a72-5f99-4208-a3b7-6bfe8ec70057  None              japaneast   itcs355-gh-deploy  69801f33-591c-4d47-a6a8-c514cc689b60  itcs355-6688022  9bc585f9-a8b8-431c-9013-efa7b2b40cdf
