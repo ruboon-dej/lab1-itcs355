@@ -121,3 +121,7 @@ ran to the cap); a degraded prompt looked cheaper (4.83 THB per 1,000) but faile
 cases, which is the kind of saving the gate exists to refuse.
 Compute choice, not measured as a before/after: the pipeline ran on DS2_v2 (6.83 THB/h) rather than
 the DS3_v2 (13.63 THB/h) assumed in the estimate.
+
+## 7. Context: the whole term
+
+Azure Cost analysis for the subscription, 31 August to 19 October (`docs/lab5/term-spend.png`, `term-spend-breakdown.png`): **$25.52**, about 850 THB at 33.32 THB/USD (817 THB at 32). That is over the 800 THB term limit and the $25.00 budget. The Azure ML workspace line is $18.27 and the registry $6.98; Lab 5 was about $1.3 (5%). Lab 5 was not the cause of the overrun, but it is part of it: without Lab 5 the total would have been about $24.2.

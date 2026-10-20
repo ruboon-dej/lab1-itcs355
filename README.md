@@ -193,7 +193,7 @@ The first remote training submission used the compute managed identity `9144aef5
 The 12 actual Azure ML experiments were done on 3 hyperparameters to achieve:
 `n_estimators`, `max_depth`, and `min_samples_leaf`. The total cost was roughly 2.91 THB, well within the budget of 150 THB.
 
-> **Correction (Lab 5):** the VM rate behind this figure was wrong. The corrected cost is about 4.90 THB (0.41 THB per trial). See [Corrections to earlier labs](#corrections-to-earlier-labs).
+> **Correction (Lab 5):** the VM rate behind this figure was wrong. At the corrected rate the run-time estimate is about 4.90 THB (0.41 THB per trial); it is an estimate, not a billed figure (see the term spend in Lab 5). See [Corrections to earlier labs](#corrections-to-earlier-labs).
 
 ### Selection
 Selected config: `n_estimators=100, max_depth=4, min_samples_leaf=5`. It was
@@ -887,6 +887,7 @@ Students subscription blocked the intended approach, the substitution and its re
 | Cost report with all six sections | Done: billed $1.28 (about 42.7 THB) against a 60 THB estimate | `reports/lab5-cost.md`, `docs/lab5/cost-analysis.png` |
 | Teardown verified | Done, re-checked about 26 hours later | `docs/lab5/teardown-log.txt`, `teardown-empty.png`, `teardown-24h.txt` |
 | LLM golden set, gate, guardrail, token bill | Done | `evals/golden/lab5.jsonl`, `docs/lab5/llm-*.txt`, `docs/lab5/token-numbers.txt` |
+| Total term spend under 800 THB | **Not met**: $25.52, about 850 THB (817 at 32 THB/USD) | `docs/lab5/term-spend.png` |
 
 ### Task 1: Managed pipeline
 
@@ -1060,6 +1061,12 @@ up is a little explanatory detail in each answer.
 The cost report is `reports/lab5-cost.md`. Billed for the resource group, 14 to 19 October: **$1.28 (about 42.7 THB)**, against a 60 THB pre-run estimate. The registry was 27.0 THB of it, the Azure ML workspace line (which holds the pipeline cluster's compute) 14.7 THB, and the Azure OpenAI account 1.0 THB. My estimate was 29% too high, mainly because it assumed a larger VM and longer runs; my usage-based reconstruction of compute plus LLM (13.4 THB) is within 20% of the billed 15.7 THB. Screenshot:
 
 ![Azure Cost analysis, resource group itcs355-6688022, 14 to 19 October](docs/lab5/cost-analysis.png)
+
+**Total term spend (checklist item: under 800 THB): not met.** Azure Cost analysis for the whole subscription, 31 August to 19 October, shows **$25.52**: about 850 THB at the 33.32 THB/USD used in this repository (about 817 THB at the 32 THB/USD that the Lab 4 section uses for the $25 budget), so roughly 2% to 6% over the 800 THB limit and over the $25.00 portal budget. By resource: the Azure ML workspace $18.27 (72%), the container registry $6.98 (27%), the Container Apps and the OpenAI account about $0.30 together, everything else under a cent. Lab 5 itself was $1.28 to $1.30 (about 43 THB, 5% of the total); about $17.8 of the workspace line was billed before 14 October. That is much larger than the Lab 2 trial estimate, which is a run-time estimate and not a billed figure; I did not trace the difference. The registry keeps costing about 5.55 THB a day while it exists.
+
+![Term total, 31 August to 19 October](docs/lab5/term-spend.png)
+
+![Term spend by resource](docs/lab5/term-spend-breakdown.png)
 
 Teardown: `make teardown` removed the pipeline jobs, the compute cluster, both schedules, the two
 new identities and the Azure OpenAI account (soft-deleted, then purged); I also deleted the failed Lab 2 cluster. `az resource list --tag lab=5`,
