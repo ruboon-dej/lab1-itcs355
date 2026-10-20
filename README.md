@@ -1073,6 +1073,10 @@ new identities and the Azure OpenAI account (soft-deleted, then purged); I also 
 `az ml compute list` and `az ml schedule list` were empty afterwards (`docs/lab5/teardown-log.txt`, `teardown-remaining.txt`); screenshot:
 `docs/lab5/teardown-empty.png`. Re-checked about 26 hours later (`docs/lab5/teardown-24h.txt`): no resources tagged lab=5, no compute clusters, only the CI identity under identities.
 
+![No compute clusters](docs/lab5/teardown-compute-empty.png)
+
+![No schedules](docs/lab5/teardown-schedules-empty.png)
+
 Not removed because they predate Lab 5 and are shared: the container registry, the workspace and its storage, the Key Vault, four idle Container Apps environments with no apps, and the CI identity.
 
 ### Corrections to earlier labs
