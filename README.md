@@ -1110,7 +1110,7 @@ Not removed because they predate Lab 5 and are shared: the container registry, t
 
 ### Notes for the grader (Lab 5)
 
-- `git log -p | grep -i -E "secret|password|AKIA|BEGIN PRIVATE"` prints two lines, both false positives: the words `get-login-password` in the `aws ecr get-login-password` command that the original AWS adapter stub quoted in a comment (since replaced), and a dummy `AWS_SECRET_ACCESS_KEY` set to `test` in `scripts/emulate_aws.py` for the local emulator. No credential was committed.
+- The credential grep in the Lab 1 checklist (`git log -p | grep -i -E "secret|password|AKIA|BEGIN PRIVATE"`) cannot return nothing in this repository, because its own words appear in prose: this README (the checklist line itself, the Lab 4 text about the registry admin password, and this note), the `aws ecr get-login-password` command name that the original AWS adapter stub quoted in a comment, and a dummy `AWS_SECRET_ACCESS_KEY` set to `test` in `scripts/emulate_aws.py` for the local emulator. It matches dozens of lines, all prose or placeholders. I also searched the full history for real credential shapes (AWS access key ids, private-key blocks, Azure account keys, SAS signatures and long `api-key` values) and found none.
 - The pipeline jobs, compute cluster, schedules and OpenAI account were deleted at teardown, so the run logs in `docs/lab5/` and the registry tags are the evidence.
 
 ### Reproduce Lab 5 offline (free)
