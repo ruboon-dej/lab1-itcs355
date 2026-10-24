@@ -1199,3 +1199,7 @@ python scripts/evaluation_gate.py --metrics reports/metrics.json --incumbent 0.9
 ```
 
 Everything that touches Azure (pipeline, schedule, live LLM calls) needs your own subscription and `cloud.env`.
+
+### Final teardown (24 Oct 2026)
+
+After the work was complete I deleted the whole resource group `itcs355-6688022`, which removed the container registry, the Azure ML workspace, both storage accounts, the Key Vault, Application Insights, the Log Analytics workspace and the `itcs355-gh-deploy` identity. Before deleting, I saved the registry tag and digest list (`docs/acr-final-tags.json`) and the model list (`docs/ml-models-final.json`). Statements earlier in this README that the registry or the workspace remain describe the state before this teardown. Spend after the 19 October figure above (the Lab 2 and Lab 3 rework on 24 Oct) is about 10 THB in estimated run time, of which about 6 THB went on failed attempts; this is an estimate, not a billed amount.
