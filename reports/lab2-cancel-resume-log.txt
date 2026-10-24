@@ -1,0 +1,60 @@
+[2026-10-24 20:35:53 +0700] Lab 2 cancel-and-resume demo (compute=lab2-dedicated, data=azureml:lab2-sensors:1)
+[2026-10-24 20:35:53 +0700] pre-flight checks
+[2026-10-24 20:35:58 +0700] pre-flight OK
+[2026-10-24 20:35:58 +0700] RUN 1: starting study (3 trials). Trial 1 will be cancelled mid-run.
+NOTE: running on Dedicated compute (approved substitution); priced at the full rate.
+trial 0: submitting {'n_estimators': 100, 'max_depth': 4, 'min_samples_leaf': 1} ...
+Class AutoDeleteSettingSchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class AutoDeleteConditionSchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class BaseAutoDeleteSettingSchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class IntellectualPropertySchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class ProtectionLevelSchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class BaseIntellectualPropertySchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+trial 0: job lab2-trial-50353d2fef9d submitted
+Downloading artifact azureml://datastores/workspaceblobstore/paths/azureml/lab2-trial-50353d2fef9d/model_output/ to /var/folders/9s/6hplmy7s3673hbycdfq2knh80000gn/T/lab2_job_pvxp825o/named-outputs/model_output
+trial 0: controller-side MLflow annotation skipped (MlflowException: Run with id=a5b50f03395f471393d098071036f2ef not found)
+trial 0: {'n_estimators': 100, 'max_depth': 4, 'min_samples_leaf': 1} -> job_id=lab2-trial-50353d2fef9d val_roc_auc=0.8424 test_roc_auc=0.8518 duration=236.9s cost=0.8966 THB cumulative=0.8966 studio_url=https://ml.azure.com/runs/lab2-trial-50353d2fef9d?wsid=/subscriptions/28cbf7ce-87e6-43eb-9461-0c09ee7b247e/resourcegroups/itcs355-6688022/workspaces/itcs355-6688022-ws&tid=9bc585f9-a8b8-431c-9013-efa7b2b40cdf
+trial 1: submitting {'n_estimators': 100, 'max_depth': 4, 'min_samples_leaf': 5} ...
+trial 1: job lab2-trial-3c8310c8f614 submitted
+[2026-10-24 20:40:06 +0700] trial 1 job lab2-trial-3c8310c8f614 submitted; cancelling in 20s so it is genuinely mid-run
+[2026-10-24 20:40:28 +0700] CANCEL: az ml job cancel -n lab2-trial-3c8310c8f614 (status was Queued)
+trial 1: {'n_estimators': 100, 'max_depth': 4, 'min_samples_leaf': 5} -> job_id=lab2-trial-3c8310c8f614 FAILED duration=53.4s cost=0.2020 THB cumulative=1.0987
+trial 2: submitting {'n_estimators': 100, 'max_depth': 8, 'min_samples_leaf': 1} ...
+trial 2: job lab2-trial-30c2410a3a99 submitted
+Downloading artifact azureml://datastores/workspaceblobstore/paths/azureml/lab2-trial-30c2410a3a99/model_output/ to /var/folders/9s/6hplmy7s3673hbycdfq2knh80000gn/T/lab2_job_zsp6h_8l/named-outputs/model_output
+trial 2: controller-side MLflow annotation skipped (MlflowException: Run with id=12ec1f5eb2004b3e973bdf9e16d747d7 not found)
+trial 2: {'n_estimators': 100, 'max_depth': 8, 'min_samples_leaf': 1} -> job_id=lab2-trial-30c2410a3a99 val_roc_auc=0.8312 test_roc_auc=0.8488 duration=152.7s cost=0.5782 THB cumulative=1.6768 studio_url=https://ml.azure.com/runs/lab2-trial-30c2410a3a99?wsid=/subscriptions/28cbf7ce-87e6-43eb-9461-0c09ee7b247e/resourcegroups/itcs355-6688022/workspaces/itcs355-6688022-ws&tid=9bc585f9-a8b8-431c-9013-efa7b2b40cdf
+
+spent 1.6768 of 150.0 THB
+[2026-10-24 20:43:26 +0700] RUN 1 finished (controller exit code 0)
+[2026-10-24 20:43:28 +0700] cancelled job: lab2-trial-3c8310c8f614; final status: Canceled
+[2026-10-24 20:43:28 +0700] checkpoint after RUN 1:
+  trial 0: completed  job=lab2-trial-50353d2fef9d duration=236.853s cost=0.8966 THB
+  trial 1: failed     job=lab2-trial-3c8310c8f614 duration=53.369s cost=0.202 THB
+  trial 2: completed  job=lab2-trial-30c2410a3a99 duration=152.731s cost=0.5782 THB
+  completed trials in checkpoint: 2   spent: 1.6768 THB
+[2026-10-24 20:43:28 +0700] RUN 2: same command again. Expect completed trials to be skipped and the cancelled trial resubmitted.
+NOTE: running on Dedicated compute (approved substitution); priced at the full rate.
+trial 0: already done, skipping (resumed from checkpoint)
+trial 1: submitting {'n_estimators': 100, 'max_depth': 4, 'min_samples_leaf': 5} ...
+Class AutoDeleteSettingSchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class AutoDeleteConditionSchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class BaseAutoDeleteSettingSchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class IntellectualPropertySchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class ProtectionLevelSchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+Class BaseIntellectualPropertySchema: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.
+trial 1: job lab2-trial-7cece077fe3d submitted
+Downloading artifact azureml://datastores/workspaceblobstore/paths/azureml/lab2-trial-7cece077fe3d/model_output/ to /var/folders/9s/6hplmy7s3673hbycdfq2knh80000gn/T/lab2_job_o1tpb9et/named-outputs/model_output
+trial 1: controller-side MLflow annotation skipped (MlflowException: Run with id=a0b7fe5067c445caae9184afb4b7cf6b not found)
+trial 1: {'n_estimators': 100, 'max_depth': 4, 'min_samples_leaf': 5} -> job_id=lab2-trial-7cece077fe3d val_roc_auc=0.8426 test_roc_auc=0.8533 duration=77.3s cost=0.2928 THB cumulative=1.9696 studio_url=https://ml.azure.com/runs/lab2-trial-7cece077fe3d?wsid=/subscriptions/28cbf7ce-87e6-43eb-9461-0c09ee7b247e/resourcegroups/itcs355-6688022/workspaces/itcs355-6688022-ws&tid=9bc585f9-a8b8-431c-9013-efa7b2b40cdf
+trial 2: already done, skipping (resumed from checkpoint)
+
+spent 1.9696 of 150.0 THB
+[2026-10-24 20:44:49 +0700] checkpoint after RUN 2:
+  trial 0: completed  job=lab2-trial-50353d2fef9d duration=236.853s cost=0.8966 THB
+  trial 1: failed     job=lab2-trial-3c8310c8f614 duration=53.369s cost=0.202 THB
+  trial 2: completed  job=lab2-trial-30c2410a3a99 duration=152.731s cost=0.5782 THB
+  trial 1: completed  job=lab2-trial-7cece077fe3d duration=77.337s cost=0.2928 THB
+  completed trials in checkpoint: 3   spent: 1.9696 THB
+[2026-10-24 20:44:49 +0700] DONE. Evidence: reports/lab2-cancel-resume-log.txt and reports/tune_demo_checkpoint.json
+skipped-on-resume count: 2

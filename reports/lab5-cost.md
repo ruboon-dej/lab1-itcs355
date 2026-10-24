@@ -43,6 +43,8 @@ Notes on this table:
 
 ## 3. The gap
 
+**Against the 20% criterion:** the pre-run estimate (about 60 THB) is 29% above the billed 42.7 THB, so it does not meet it. The usage-based figures do: compute plus LLM reconstructed from run history is 13.4 THB against 15.7 THB billed (15% under), and compute alone is 12.3 against 14.7 (billed is 19.5% above the reconstruction, just inside the line). Details follow the table below.
+
 The estimate was about 60 THB and the billed total is 42.7 THB, 17 THB or 29% lower, just below
 the bottom of my 45 to 90 range.
 

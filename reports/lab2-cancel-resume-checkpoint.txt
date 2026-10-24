@@ -1,0 +1,101 @@
+{
+  "completed": [
+    "{\"max_depth\": 4, \"min_samples_leaf\": 1, \"n_estimators\": 100}",
+    "{\"max_depth\": 8, \"min_samples_leaf\": 1, \"n_estimators\": 100}",
+    "{\"max_depth\": 4, \"min_samples_leaf\": 5, \"n_estimators\": 100}"
+  ],
+  "spent_thb": 1.9695854640125698,
+  "trials": [
+    {
+      "trial": 0,
+      "params": {
+        "n_estimators": 100,
+        "max_depth": 4,
+        "min_samples_leaf": 1
+      },
+      "seed": 20260101,
+      "job_id": "lab2-trial-50353d2fef9d",
+      "status": "completed",
+      "mlflow_run_id": "a5b50f03395f471393d098071036f2ef",
+      "data_fingerprint": "422cccb9136e8140",
+      "data_version": "1c886b512c8a5c9bf723da1cd119fc80.dir",
+      "git_commit": "26f02e8004632e7a9875eae10ab7c81c734edaea",
+      "image_digest": "sha256:da6f0653cd4739f1c99cc95586b4f13e47d5d08d226e6ed646a2e374511da2d1",
+      "instance_type": "Standard_DS3_v2",
+      "compute_tier": "dedicated",
+      "duration_s": 236.853,
+      "training_duration_s": 0.42685365676879883,
+      "cost_thb": 0.8966,
+      "val_roc_auc": 0.8424390505441984,
+      "val_pr_auc": 0.3937865637116728,
+      "test_roc_auc": 0.8518038253137591,
+      "test_pr_auc": 0.4942206749154695
+    },
+    {
+      "trial": 1,
+      "params": {
+        "n_estimators": 100,
+        "max_depth": 4,
+        "min_samples_leaf": 5
+      },
+      "seed": 20260101,
+      "job_id": "lab2-trial-3c8310c8f614",
+      "status": "failed",
+      "error": "training job lab2-trial-3c8310c8f614 ended with status=JobStatus.CANCELED",
+      "instance_type": "Standard_DS3_v2",
+      "compute_tier": "dedicated",
+      "duration_s": 53.369,
+      "cost_thb": 0.202
+    },
+    {
+      "trial": 2,
+      "params": {
+        "n_estimators": 100,
+        "max_depth": 8,
+        "min_samples_leaf": 1
+      },
+      "seed": 20260101,
+      "job_id": "lab2-trial-30c2410a3a99",
+      "status": "completed",
+      "mlflow_run_id": "12ec1f5eb2004b3e973bdf9e16d747d7",
+      "data_fingerprint": "422cccb9136e8140",
+      "data_version": "1c886b512c8a5c9bf723da1cd119fc80.dir",
+      "git_commit": "26f02e8004632e7a9875eae10ab7c81c734edaea",
+      "image_digest": "sha256:da6f0653cd4739f1c99cc95586b4f13e47d5d08d226e6ed646a2e374511da2d1",
+      "instance_type": "Standard_DS3_v2",
+      "compute_tier": "dedicated",
+      "duration_s": 152.731,
+      "training_duration_s": 0.517888069152832,
+      "cost_thb": 0.5782,
+      "val_roc_auc": 0.8311874325017808,
+      "val_pr_auc": 0.38299118861143044,
+      "test_roc_auc": 0.8487605110121668,
+      "test_pr_auc": 0.4705254485859324
+    },
+    {
+      "trial": 1,
+      "params": {
+        "n_estimators": 100,
+        "max_depth": 4,
+        "min_samples_leaf": 5
+      },
+      "seed": 20260101,
+      "job_id": "lab2-trial-7cece077fe3d",
+      "status": "completed",
+      "mlflow_run_id": "a0b7fe5067c445caae9184afb4b7cf6b",
+      "data_fingerprint": "422cccb9136e8140",
+      "data_version": "1c886b512c8a5c9bf723da1cd119fc80.dir",
+      "git_commit": "26f02e8004632e7a9875eae10ab7c81c734edaea",
+      "image_digest": "sha256:da6f0653cd4739f1c99cc95586b4f13e47d5d08d226e6ed646a2e374511da2d1",
+      "instance_type": "Standard_DS3_v2",
+      "compute_tier": "dedicated",
+      "duration_s": 77.337,
+      "training_duration_s": 0.41596364974975586,
+      "cost_thb": 0.2928,
+      "val_roc_auc": 0.84259989736441,
+      "val_pr_auc": 0.3932308835337653,
+      "test_roc_auc": 0.8532857870606215,
+      "test_pr_auc": 0.49652572003414885
+    }
+  ]
+}

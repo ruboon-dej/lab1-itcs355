@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 import mlflow
@@ -32,6 +33,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--trials", type=int, default=12, help="minimum 12 for the lab")
     p.add_argument("--budget-thb", type=float, default=150.0)
     p.add_argument("--instance", default="Standard_DS3_v2", help="key into src/costs.py PRICE_TABLE")
+    p.add_argument("--tier", choices=["low_priority", "dedicated"], default="low_priority",
+                   help="Compute tier actually used. 'dedicated' is the instructor-approved "
+                        "substitution when LowPriority quota is 0; it is priced at the full rate.")
     p.add_argument("--seed", type=int, default=seeds.DEFAULT_SEED)
     p.add_argument("--image-uri-file", type=Path, default=Path(".image_uri"),
                    help="File written by `make image-push` with the digest-pinned image URI.")
@@ -69,11 +73,15 @@ def main() -> None:
         raise SystemExit(f"No image URI found at {args.image_uri_file} — run `make image-push` first.")
     image_uri = args.image_uri_file.read_text().strip()
 
+    if args.tier == "dedicated":
+        os.environ["LAB2_ALLOW_DEDICATED"] = "1"
+        print("NOTE: running on Dedicated compute (approved substitution); priced at the full rate.")
+
     adapter = get_adapter(cfg)
     rate = costs.hourly_rate(
         cfg.provider,
         args.instance,
-        spot=True,
+        spot=(args.tier == "low_priority"),
     )
 
     state = load_checkpoint(args.checkpoint)
@@ -100,6 +108,7 @@ def main() -> None:
         print(f"trial {i}: submitting {params} ...")
         started = time.perf_counter()
         job_id = adapter.submit_training(image_uri, train_args)
+        print(f"trial {i}: job {job_id} submitted", flush=True)
         try:
             result = adapter.wait_training(job_id)
         except RuntimeError as e:
@@ -114,10 +123,10 @@ def main() -> None:
                 "params": params,
                 "seed": args.seed,
                 "job_id": job_id,
-                "status": "failed",
+                "status": "cancelled" if "Canceled" in str(e) else "failed",
                 "error": str(e),
                 "instance_type": args.instance,
-                "compute_tier": "low_priority",
+                "compute_tier": args.tier,
                 "duration_s": round(elapsed_s, 3),
                 "cost_thb": round(trial_cost, 4),
             })
@@ -152,7 +161,7 @@ def main() -> None:
             "git_commit": result["git_commit"],
             "image_digest": result["image_digest"],
             "instance_type": args.instance,
-            "compute_tier": "low_priority",
+            "compute_tier": args.tier,
             "duration_s": round(elapsed_s, 3),
             "training_duration_s": result["training_duration_s"],
             "cost_thb": round(trial_cost, 4),
@@ -164,26 +173,31 @@ def main() -> None:
 
         state["trials"].append(trial_record)
 
-        # Add controller-side cost and job lineage to the same persistent MLflow run.
-        mlflow.set_tracking_uri(cfg.mlflow_tracking_uri)
+        try:
+            # Add controller-side cost and job lineage to the same persistent MLflow run.
+            mlflow.set_tracking_uri(cfg.mlflow_tracking_uri)
 
-        with mlflow.start_run(
-            run_id=result["mlflow_run_id"]
-        ):
-            mlflow.log_metrics(
-                {
-                    "duration_s": round(elapsed_s, 3),
-                    "cost_thb": round(trial_cost, 4),
-                }
-            )
+            with mlflow.start_run(
+                run_id=result["mlflow_run_id"]
+            ):
+                mlflow.log_metrics(
+                    {
+                        "duration_s": round(elapsed_s, 3),
+                        "cost_thb": round(trial_cost, 4),
+                    }
+                )
 
-            mlflow.set_tags(
-                {
-                    "training_job_id": job_id,
-                    "instance_type": args.instance,
-                    "compute_tier": "low_priority",
-                }
-            )
+                mlflow.set_tags(
+                    {
+                        "training_job_id": job_id,
+                        "instance_type": args.instance,
+                        "compute_tier": args.tier,
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            # With LAB2_JOB_LOCAL_MLFLOW=1 the job logs to its own local store, so the run
+            # does not exist in the controller's tracking store. Do not lose the checkpoint.
+            print(f"trial {i}: controller-side MLflow annotation skipped ({type(exc).__name__}: {exc})")
 
         save_checkpoint(args.checkpoint, state)
 

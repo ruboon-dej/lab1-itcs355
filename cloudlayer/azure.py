@@ -425,15 +425,30 @@ class AzureAdapter(CloudAdapter):
             )
         ).lower().replace("-", "_")
 
-        if tier not in {
+        is_low_priority = tier in {
             "low_priority",
             "lowpriority",
-        }:
+        }
+
+        # Instructor-approved substitution (Azure for Students has a
+        # LowPriority quota of 0): Dedicated compute is allowed only when
+        # explicitly requested, and every record is then labelled honestly.
+        allow_dedicated = (
+            os.environ.get("LAB2_ALLOW_DEDICATED") == "1"
+        )
+
+        if not is_low_priority and not allow_dedicated:
             raise RuntimeError(
                 f"Lab 2 requires discounted compute, but compute "
                 f"{compute_name!r} reports tier={tier!r}. "
-                "Do not submit the study on Dedicated compute."
+                "Do not submit the study on Dedicated compute "
+                "(set LAB2_ALLOW_DEDICATED=1 only for the "
+                "instructor-approved Dedicated substitution)."
             )
+
+        actual_tier = (
+            "low_priority" if is_low_priority else "dedicated"
+        )
 
         cli_args = " ".join(
             f"--{key} {value}"
@@ -444,14 +459,12 @@ class AzureAdapter(CloudAdapter):
             image=image_uri
         )
 
-        data_uri = (
+        # A registered Azure ML data asset (e.g. azureml:lab2-sensors:1) can be
+        # supplied through LAB2_TRAINING_DATA. A plain https:// blob URL is
+        # treated as public storage and cannot be mounted when it is private.
+        data_uri = os.environ.get("LAB2_TRAINING_DATA") or (
             f"{self.cfg.blob_uri.rstrip('/')}"
             "/training-data/sensors.csv"
-        )
-
-        output_uri = (
-            f"{self.cfg.blob_uri.rstrip('/')}"
-            f"/lab2-outputs/{uuid.uuid4().hex}"
         )
 
         git_sha = subprocess.run(
@@ -494,6 +507,18 @@ class AzureAdapter(CloudAdapter):
             self._mlflow_tracking_uri()
         )
 
+        # Azure ML injects MLFLOW_TRACKING_URI (workspace azureml:// URI) AND
+        # MLFLOW_RUN_ID / MLFLOW_EXPERIMENT_* into every job, and these win
+        # over anything passed as environment variables. The current training
+        # image has no azureml-mlflow plugin, so with LAB2_JOB_LOCAL_MLFLOW=1
+        # the command itself unsets every MLFLOW_* variable and src.train
+        # falls back to its own local file store.
+        train_prefix = (
+            "env $(env | cut -d= -f1 | grep '^MLFLOW_' | sed 's/^/-u /') "
+            if os.environ.get("LAB2_JOB_LOCAL_MLFLOW") == "1"
+            else ""
+        )
+
         job = command(
             environment=env,
 
@@ -507,7 +532,7 @@ class AzureAdapter(CloudAdapter):
 
             command=(
                 "cd /app && "
-                "python -m src.train "
+                f"{train_prefix}python -m src.train "
                 f"--data-path ${{{{inputs.training_data}}}} "
                 f"{cli_args} "
                 "--experiment itcs355-lab2 "
@@ -516,9 +541,12 @@ class AzureAdapter(CloudAdapter):
             ),
 
             outputs={
+                # Managed output (workspace default datastore). Azure ML now
+                # rejects https:// blob paths as outputs
+                # (NotSupportedAssetOutputUri); wait_training reads the
+                # result back with jobs.download(output_name=...).
                 "model_output": Output(
                     type=AssetTypes.URI_FOLDER,
-                    path=output_uri,
                     mode="rw_mount",
                 ),
             },
@@ -533,16 +561,21 @@ class AzureAdapter(CloudAdapter):
                 "DVC_DATA_VERSION": dvc_version,
                 "IMAGE_DIGEST": image_digest,
                 "INSTANCE_TYPE": "Standard_DS3_v2",
-                "COMPUTE_TIER": "low_priority",
+                "COMPUTE_TIER": actual_tier,
             },
 
+            # Unique job name per submission. The controller seeds Python's
+            # random module, and the SDK's auto-generated names come from it,
+            # so every run would otherwise reuse the same job names and get
+            # the old finished job back instead of a new one.
+            name=f"lab2-trial-{uuid.uuid4().hex[:12]}",
             display_name="itcs355-lab2-trial",
             experiment_name="itcs355-lab2",
 
             tags={
                 **self.cfg.tags(2),
                 "compute": compute_name,
-                "compute_tier": "low_priority",
+                "compute_tier": actual_tier,
             },
         )
 

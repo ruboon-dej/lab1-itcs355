@@ -13,7 +13,7 @@ parameters:
   min_samples_leaf: 5
   floor: 0.75                # absolute floor on the validation metric
   margin: 0.0075             # must beat the incumbent by this much (about one seed of noise)
-  allow_bootstrap: false      # first run only: no production model exists yet. Flip to false.
+  allow_bootstrap: false      # true only for the very first run (no production model yet); switched off after the first promotion
 
 compute:
   instance: Standard_DS2_v2  # dedicated: Azure ML low-priority quota is 0 on this subscription

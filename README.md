@@ -183,7 +183,7 @@ quota if one is made available.
 
 The 12-trial sweep and seed reruns were run on Dedicated Standard_DS3_v2 compute; the corresponding execution evidence is preserved under azure_trial_metrics/.
 
-The current training adapter enforces LowPriority compute for new Lab 2 submissions; the historical Dedicated runs above were completed before this guard was added and are retained as experimental evidence because the required LowPriority compute could not be provisioned.
+The training adapter enforces LowPriority compute by default. Dedicated compute is accepted only when `LAB2_ALLOW_DEDICATED=1` is set (done by `scripts/tune_remote.py --tier dedicated`), which is the instructor-approved substitution for this subscription's zero LowPriority quota. Every job tag and checkpoint record carries the tier actually used, and Dedicated runs are priced at the full rate. The historical Dedicated runs above were completed before this guard was added and are retained as experimental evidence.
 
 ### Initial permission failure
 
@@ -283,6 +283,74 @@ the completed trial was skipped and a subsequent trial could be recorded.
 An actual Azure ML LowPriority interruption could not be demonstrated because
 the required LowPriority compute could not be provisioned under the available
 Azure for Students quota.
+
+### Azure cancel-and-resume demonstration (24 Oct 2026)
+
+The instructor accepted Dedicated compute for Lab 2 and asked for the
+interruption behaviour to be demonstrated manually: cancel one trial partway,
+resubmit it, and show the study resuming from its checkpoint.
+
+**Setup.** Cluster `lab2-dedicated` (`Standard_DS3_v2`, Dedicated, 0 to 1 nodes,
+system-assigned identity with `AcrPull` on the registry and
+`Storage Blob Data Contributor` on the workspace storage account). The demo is
+fully scripted: `bash scripts/lab2_cancel_resume_demo.sh` runs a 3-trial study,
+cancels trial 1 with `az ml job cancel` 20 seconds after submission, lets the study
+finish, then runs the identical command again. Times below are +07.
+
+| Time | Event |
+| --- | --- |
+| 20:35:58 | Run 1 starts (3 trials, own checkpoint file `reports/tune_demo_checkpoint.json`) |
+| ~20:40:05 | Trial 0 (`lab2-trial-50353d2fef9d`) completes: 236.9 s, 0.8966 THB |
+| 20:40:06 | Trial 1 job `lab2-trial-3c8310c8f614` submitted |
+| 20:40:28 | `az ml job cancel -n lab2-trial-3c8310c8f614`; job status at that moment was `Queued` |
+| 20:43:26 | Run 1 ends. Trial 2 (`lab2-trial-30c2410a3a99`) completed: 152.7 s, 0.5782 THB. `az ml job show` reports the cancelled job's final status as `Canceled` |
+| 20:43:28 | Run 2 starts with the same command and the same checkpoint |
+| 20:43:28+ | `trial 0: already done, skipping (resumed from checkpoint)`; trial 1 resubmitted as `lab2-trial-7cece077fe3d`; `trial 2: already done, skipping (resumed from checkpoint)` |
+| 20:44:49 | Run 2 ends: trial 1 completed in 77.3 s (0.2928 THB), `val_roc_auc=0.8426`, `test_roc_auc=0.8533` |
+
+Result: two trials were skipped on resume and only the cancelled one was
+resubmitted, so the study was not restarted from the beginning. The resubmitted trial
+reproduced `val_roc_auc=0.8426` and `test_roc_auc=0.8533`, the same values as an
+earlier completed run of the same configuration (`lab2-trial-a993fc0d130e`).
+Evidence: `reports/lab2-cancel-resume-log.txt` (full timestamped log) and
+`reports/lab2-cancel-resume-checkpoint.txt` (checkpoint JSON after both runs).
+
+**What this does and does not show.**
+- The resume is at study level. The cancelled trial restarted from scratch, because
+  the training script has no mid-job checkpoint. Fitting the random forest takes well
+  under a second; most of a trial's roughly 77 s is job provisioning, so there is no
+  meaningful training progress to preserve inside a single trial.
+- The trial was cancelled while `Queued`, that is, after submission but before the
+  training process had started. It was in flight on Azure, but it was not mid-training.
+- The controller recorded the cancelled trial as `failed` in the checkpoint, while
+  Azure's own final status for the job is `Canceled`. Azure's job status is the
+  authoritative record; I did not investigate why the controller's label differs.
+- This is a manual cancellation on Dedicated compute, not a LowPriority eviction.
+
+**Cost of Dedicated against LowPriority (same instance).** `Standard_DS3_v2` costs
+13.63 THB/h Dedicated and about 2.73 THB/h at the LowPriority price (80% off). The
+four jobs in this demo cost an estimated 1.97 THB on Dedicated, against about
+0.39 THB for the same run time at the LowPriority price. For the original 12-trial
+sweep the corresponding figures are about 4.90 THB against about 0.98 THB. Dedicated
+therefore cost about five times as much, roughly 3.9 THB more for the sweep, and in
+exchange it cannot be evicted, which is the interruption behaviour this demonstration
+had to simulate by hand. All figures are run-time estimates (duration times list
+price), not billed amounts.
+
+**Adapter changes this required.** The Lab 2 submission code no longer worked on
+current Azure ML and was changed as follows:
+
+| Symptom | Cause | Change |
+| --- | --- | --- |
+| `NotSupportedAssetOutputUri` before the job starts | An `https://` blob path is now rejected as a job output | Output is a managed output on the workspace default datastore |
+| A new submission returned an old failed job | The controller seeds Python's `random`, which also drives the SDK's auto-generated job names, so names repeated across runs | Every job gets a unique explicit name (`lab2-trial-<uuid>`) |
+| `Failed to mount URI https://...sensors.csv` | An `https://` input is treated as public storage and cannot be mounted when the blob is private | Training data is a registered data asset (`LAB2_TRAINING_DATA=azureml:lab2-sensors:1`) |
+| `UnsupportedModelRegistryStoreURIException` for an `azureml://` URI, then `Run '...' not found` | Azure ML injects `MLFLOW_TRACKING_URI`, `MLFLOW_RUN_ID` and `MLFLOW_EXPERIMENT_*` into the job, and the current training image has no `azureml-mlflow` plugin | With `LAB2_JOB_LOCAL_MLFLOW=1` the job command unsets every `MLFLOW_*` variable so `src.train` uses its local file store |
+
+Consequences: MLflow records for these demo jobs live in the job's own store, not in
+the workspace's persistent MLflow, as with the original 12 trials, and the
+controller's attempt to annotate the run afterwards is skipped with a printed
+warning. The cluster was deleted after the demonstration.
 
 ---
 
@@ -507,31 +575,42 @@ This demonstrates that unnecessarily large request payloads can become a serving
 
 ### Canary and rollback
 
-The intended Lab 3 canary workflow is to deploy a second revision and route a controlled percentage of traffic to it, for example:
+The intended Lab 3 canary workflow is to deploy a second revision and route a controlled percentage of traffic to it:
 
 ```text
 blue: 90%
 green: 10%
 ```
 
-The repository contains the canary/rollback implementation for this workflow.
-
-However, the Azure Container Apps environment available for this deployment is an **Express environment**. Express environments do not support switching from single active revision mode to multiple active revision mode.
-
-The attempted revision-mode change failed with the exact Azure error:
+**First attempt (Express environment).** The Container Apps environment I originally used rejected multiple-revision mode:
 
 ```text
 (ExpressEnvironmentFeatureNotSupported)
 'Not Single Active Revisions Mode' is not supported on express environments.
 ```
 
-Therefore, a **concurrent 90/10 traffic split between two active revisions could not be performed in this environment**.
+A concurrent 90/10 split could not be performed there. This was a platform restriction, not an application error, and it was documented here rather than claimed as a success. The instructor then asked me to retry on a standard environment.
 
-This is an Azure Container Apps platform restriction rather than an application or FastAPI implementation error. It cannot be solved by changing the prediction service code.
+**Diagnosis.** I probed all four environments in the resource group (`itcs355-6688022-cae`, `itcs355-itcs355-6688022-cae`, `...-cae2`, `...-cae-wp`) with a throwaway multi-revision app. All four returned the same Express error. Shell history shows every one had been created with plain `az containerapp env create --location japaneast` (the 24 Sep one also with `--enable-workload-profiles`). No Express flag was passed and `az containerapp up` was never run. The installed `containerapp` extension did not list `--environment-mode` until it was reinstalled (version 1.3.0b5).
 
-Consequently, the repository should not claim that a true concurrent 90/10 blue/green split was successfully achieved in this Express environment.
+**Fix.** Creating the environment with an explicit mode produced a standard one that accepts multiple revisions:
 
-The canary/rollback helper remains in the repository because it implements the intended deployment workflow and can be used in an Azure Container Apps environment that supports multiple active revisions.
+```bash
+az containerapp env create -n itcs355-std -g itcs355-6688022 --location japaneast \
+  --environment-mode ConsumptionOnly --logs-destination none
+```
+
+**Result (24 Oct 2026).** `make deploy` and `make canary` ran in `itcs355-std`:
+
+* traffic set to 90/10 across `itcs355-6688022-staging--0000001` and `--0000002`, both Healthy;
+* 50 requests returned 45 with `model_version` 2 and 5 with `model_version` 3, which is exactly 90/10;
+* `make rollback` returned 100% of traffic to `--0000001`, and 15 further requests all returned version 2.
+
+The full timestamped output is in `reports/lab3-canary-evidence.md`.
+
+**Caveat.** Both revisions run the same image digest. `deploy_canary` re-pushes the local image and only sets `MODEL_VERSION=3`, so predictions are identical. This demonstrates the traffic-split and rollback mechanism on a standard environment. It is not a comparison of two different models.
+
+**Cleanup.** The app, `itcs355-std`, the four Express environments and the auto-created Log Analytics workspaces were deleted afterwards. The CD environment named in the Lab 4 section no longer exists.
 
 ### Cost
 
@@ -620,6 +699,7 @@ loadtest/k6.js
 service/Dockerfile.serve
 cloudlayer/azure.py
 scripts/canary_roll.py
+reports/lab3-canary-evidence.md
 Makefile
 ```
 
@@ -640,9 +720,9 @@ The repository therefore provides evidence for:
 * payload-size experiments
 * serving-cost analysis
 * deployment and teardown logic
-* attempted canary/multiple-revision deployment
+* 90/10 canary traffic split and rollback on a standard environment (same-image caveat above)
 
-The main limitation is the Azure Container Apps Express environment's inability to support multiple active revisions. This prevented the intended concurrent 90/10 canary traffic split, and the exact Azure platform error is preserved above.
+The first canary attempt failed on an Express environment, and the exact Azure platform error is preserved above. The canary was completed later on a standard environment; its main limitation is that both revisions ran the same image.
 
 ### Conclusion
 
@@ -650,14 +730,7 @@ Lab 3 successfully demonstrates the provider-independent serving workflow, conta
 
 The experiments also establish important serving limitations. The declared p95 target of 200 ms was not met by the later authenticated baseline measurements, and reliability degraded beyond the tested 2-VU range. Batch inference substantially increased prediction throughput, while unnecessarily large payloads substantially increased latency.
 
-The intended concurrent canary traffic split could not be completed because the available Azure Container Apps Express environment does not support multiple active revisions. The exact platform error was:
-
-```text
-(ExpressEnvironmentFeatureNotSupported)
-'Not Single Active Revisions Mode' is not supported on express environments.
-```
-
-This limitation is documented explicitly rather than presenting an unsupported 90/10 canary as successfully completed.
+The concurrent canary traffic split first failed on an Express environment (`ExpressEnvironmentFeatureNotSupported`). On a standard environment created with `--environment-mode ConsumptionOnly` it ran as intended: a 90/10 split confirmed by a 45/5 request sample, followed by a rollback to 100%. Both revisions served the same image, so this shows the mechanism rather than a model comparison.
 
 
 ---
@@ -710,7 +783,7 @@ flowchart LR
 ```
 
 - `ci.yml` runs on every pull request and on pushes to main. Documentation-only pushes to main (README, `docs/`, `reports/*.md`, `reports/*.txt`) are skipped, because CD follows CI and would otherwise redeploy staging after a pure text change.
-- `cd.yml` starts only when CI succeeded on main and runs only through the `staging` GitHub environment. It checks out the exact commit CI tested, rebuilds the serving image tagged with that commit SHA (never `latest`), pushes it, deploys to Azure Container Apps (environment `itcs355-itcs355-6688022-cae`) and runs a smoke test: three known payloads, each of which must return a probability in [0, 1] and a `model_version` equal to the commit SHA.
+- `cd.yml` starts only when CI succeeded on main and runs only through the `staging` GitHub environment. It checks out the exact commit CI tested, rebuilds the serving image tagged with that commit SHA (never `latest`), pushes it, deploys to Azure Container Apps (environment `itcs355-itcs355-6688022-cae`, deleted at the 24 Oct 2026 cleanup; recreate it before re-running CD) and runs a smoke test: three known payloads, each of which must return a probability in [0, 1] and a `model_version` equal to the commit SHA.
 
 ![CI green on main](docs/lab4/01-ci-green-main.png)
 
@@ -835,7 +908,7 @@ Each item says what the lab asked for, what I did instead and why.
 - **S4: the alert goes to a Discord webhook.** The handout lists email, Slack and Line Notify. Line Notify was shut down on 31 March 2025, and Discord needs no app registration. It is a channel I actually see, and the failed run also emails me.
 - **S5: production inputs are simulated.** The service receives no real traffic, so the drift window is fresh data from the same generator with a controlled shift. Detection times therefore measure this pipeline, not a real incident.
 - **S6: CD creates the staging app with `az containerapp create`, not `adapter.deploy()`.** Evidence is in the CD section above. Image push still uses the adapter.
-- **S7: rollback means redeploying the previous SHA-tagged image.** The Lab 3 traffic-split rollback could not run (`ExpressEnvironmentFeatureNotSupported`), and images in the registry are immutable, so redeploying a previous tag is the recovery path I can actually exercise.
+- **S7: rollback means redeploying the previous SHA-tagged image.** The Lab 3 traffic-split rollback was demonstrated later on a standard environment (see the Lab 3 canary section). In CD, images in the registry are immutable, so redeploying a previous SHA tag is the recovery path used there.
 - **L1: the registry admin credential.** Creating the app stores the registry's admin password as a Container App secret. CI login is keyless, but the running app still pulls with a static credential.
 - **L2: `requirements.in` does not compile as written.** `mlflow==3.16.0` needs `mlflow-skinny==3.16.0`, while `azureml-mlflow` needs `<=3.15.0`, which in turn needs `pandas<3`. I left the training stack alone; CD and the drift job use a separate hash-locked `requirements-ops.txt` with no mlflow.
 - **L3: the metric sender was replaced.** The first version used the OpenTelemetry exporter, which does not report a failed delivery to the caller, so success could not be confirmed. It was replaced by a direct post to the Application Insights ingestion endpoint that checks Azure's acknowledgement; the data points above arrived this way.
@@ -885,7 +958,7 @@ Students subscription blocked the intended approach, the substitution and its re
 | Scheduled retraining and the three-strategy answer | Done: schedule observed firing twice | `docs/lab5/scheduled-runs-all.txt`, `scheduled-run-logs.txt` |
 | Portability audit and second-provider swap | Done against emulators (L5-S5) | `docs/lab5/swap-naive.txt`, `swap-pass.txt` |
 | Cost report with all six sections | Done: billed $1.28 (about 42.7 THB) against a 60 THB estimate | `reports/lab5-cost.md`, `docs/lab5/cost-analysis.png` |
-| Teardown verified | Done, re-checked about 26 hours later | `docs/lab5/teardown-log.txt`, `teardown-empty.png`, `teardown-24h.txt` |
+| Teardown verified | Done, re-checked about 26 hours later | `docs/lab5/teardown-log.txt`, `teardown-compute-empty.png`, `teardown-schedules-empty.png`, `teardown-24h.txt` |
 | LLM golden set, gate, guardrail, token bill | Done | `evals/golden/lab5.jsonl`, `docs/lab5/llm-*.txt`, `docs/lab5/token-numbers.txt` |
 | Total term spend under 800 THB | **Not met**: $25.52, about 850 THB (817 at 32 THB/USD) | `docs/lab5/term-spend.png` |
 
@@ -1032,6 +1105,9 @@ to bypass a safety control is refused as a whole even when a probability is pres
 works* (free, offline, reproducible, exits non-zero by design because it replays the old responses):
 
 ```bash
+# 1. write the baseline (reports/*.json is gitignored, so it does not exist on a fresh clone)
+python scripts/llm_eval.py --golden evals/golden/lab5.jsonl --responses evals/fixtures/lab5-baseline.jsonl --provider azure --model gpt-4.1-mini --out reports/llm_eval-lab5-baseline.json
+# 2. replay the old v1 responses against it
 python scripts/llm_eval.py --golden evals/golden/lab5.jsonl --responses evals/fixtures/lab5-v1-responses.jsonl --baseline reports/llm_eval-lab5-baseline.json --provider azure --model gpt-4.1-mini --out /tmp/x.json
 ```
 
@@ -1070,8 +1146,7 @@ The cost report is `reports/lab5-cost.md`. Billed for the resource group, 14 to 
 
 Teardown: `make teardown` removed the pipeline jobs, the compute cluster, both schedules, the two
 new identities and the Azure OpenAI account (soft-deleted, then purged); I also deleted the failed Lab 2 cluster. `az resource list --tag lab=5`,
-`az ml compute list` and `az ml schedule list` were empty afterwards (`docs/lab5/teardown-log.txt`, `teardown-remaining.txt`); screenshot:
-`docs/lab5/teardown-empty.png`. Re-checked about 26 hours later (`docs/lab5/teardown-24h.txt`): no resources tagged lab=5, no compute clusters, only the CI identity under identities.
+`az ml compute list` and `az ml schedule list` were empty afterwards (`docs/lab5/teardown-log.txt`, `teardown-remaining.txt`); screenshots below. Re-checked about 26 hours later (`docs/lab5/teardown-24h.txt`): no resources tagged lab=5, no compute clusters, only the CI identity under identities.
 
 ![No compute clusters](docs/lab5/teardown-compute-empty.png)
 
@@ -1118,7 +1193,8 @@ Not removed because they predate Lab 5 and are shared: the container registry, t
 ```bash
 make portability-audit
 make llm-eval                                                  # shipped worked example, 8/8
-python scripts/llm_eval.py --golden evals/golden/lab5.jsonl --responses evals/fixtures/lab5-baseline.jsonl --provider azure --model gpt-4.1-mini --out /tmp/b.json
+python scripts/llm_eval.py --golden evals/golden/lab5.jsonl --responses evals/fixtures/lab5-baseline.jsonl --provider azure --model gpt-4.1-mini --out reports/llm_eval-lab5-baseline.json   # 15/15, writes the baseline
+python scripts/llm_eval.py --golden evals/golden/lab5.jsonl --responses evals/fixtures/lab5-v1-responses.jsonl --baseline reports/llm_eval-lab5-baseline.json --provider azure --model gpt-4.1-mini --out /tmp/x.json; echo "exit=$?"   # must exit 1: L5-008 regression
 python scripts/evaluation_gate.py --metrics reports/metrics.json --incumbent 0.99; echo "exit=$?"   # must exit 1
 ```
 
